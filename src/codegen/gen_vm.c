@@ -135,10 +135,14 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "    %s_value_t stack[%d];\n"
         "    int sp;\n"
         "    int running;\n"
-        "    %s_const_pool_t constants;\n"
-        "} %s_vm_t;\n\n",
-        spec->name, spec->stack.max_depth,
-        spec->name, spec->name);
+        "    %s_const_pool_t constants;\n",
+        spec->name, spec->stack.max_depth, spec->name);
+
+    if (spec->features.debug_tracing) {
+        vmgen_buf_append(&buf, "    int trace_enabled;\n");
+    }
+
+    vmgen_buf_appendf(&buf, "} %s_vm_t;\n\n", spec->name);
 
     /* API prototypes */
     vmgen_buf_appendf(&buf,
@@ -167,7 +171,17 @@ static void emit_switch_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
                                  const char *upper) {
     vmgen_buf_append(buf,
         "    while (vm->running && vm->ip < vm->code_len) {\n"
-        "        uint8_t opcode = vm->code[vm->ip++];\n"
+        "        uint8_t opcode = vm->code[vm->ip++];\n");
+
+    if (spec->features.debug_tracing) {
+        vmgen_buf_appendf(buf,
+            "        if (vm->trace_enabled) {\n"
+            "            %s_disasm_instruction(vm->code, vm->code_len, vm->ip - 1);\n"
+            "        }\n",
+            spec->name);
+    }
+
+    vmgen_buf_append(buf,
         "        switch (opcode) {\n");
 
     for (int i = 0; i < spec->instruction_count; i++) {
@@ -217,6 +231,10 @@ static void emit_fnptr_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
             "static int handle_%s(%s_vm_t *vm) {\n",
             instr->name, spec->name);
 
+        if (instr->operand_count == 0) {
+            vmgen_buf_append(buf, "    (void)vm;\n");
+        }
+
         for (int j = 0; j < instr->operand_count; j++) {
             vmgen_buf_appendf(buf, "    %s %s = %s;\n",
                               c_type_for_operand(instr->operands[j].type),
@@ -248,10 +266,21 @@ static void emit_fnptr_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
     (void)upper;
 }
 
-static void emit_fnptr_loop(vmgen_buf_t *buf, const vmgen_spec_t *spec) {
+static void emit_fnptr_loop(vmgen_buf_t *buf, const vmgen_spec_t *spec,
+                            const char *upper) {
     vmgen_buf_appendf(buf,
         "    while (vm->running && vm->ip < vm->code_len) {\n"
-        "        uint8_t opcode = vm->code[vm->ip++];\n"
+        "        uint8_t opcode = vm->code[vm->ip++];\n");
+
+    if (spec->features.debug_tracing) {
+        vmgen_buf_appendf(buf,
+            "        if (vm->trace_enabled) {\n"
+            "            %s_disasm_instruction(vm->code, vm->code_len, vm->ip - 1);\n"
+            "        }\n",
+            spec->name);
+    }
+
+    vmgen_buf_appendf(buf,
         "        if (opcode >= %s_OP_COUNT) {\n"
         "            fprintf(stderr, \"unknown opcode %%d at ip %%zu\\n\",\n"
         "                    opcode, vm->ip - 1);\n"
@@ -260,7 +289,7 @@ static void emit_fnptr_loop(vmgen_buf_t *buf, const vmgen_spec_t *spec) {
         "        int rc = %s_dispatch_table[opcode](vm);\n"
         "        if (rc != 0) return rc;\n"
         "    }\n",
-        spec->name, spec->name);
+        upper, spec->name);
 }
 
 static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
@@ -278,7 +307,13 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
     vmgen_buf_append(&buf,
         "#include \"vm.h\"\n"
         "#include <stdio.h>\n"
-        "#include <string.h>\n\n");
+        "#include <string.h>\n");
+
+    if (spec->features.debug_tracing) {
+        vmgen_buf_append(&buf, "#include \"disasm.h\"\n");
+    }
+
+    vmgen_buf_append(&buf, "\n");
 
     emit_read_macros(&buf);
 
@@ -354,14 +389,14 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         emit_switch_dispatch(&buf, spec, upper);
         break;
     case VMGEN_DISPATCH_FNPTR:
-        emit_fnptr_loop(&buf, spec);
+        emit_fnptr_loop(&buf, spec, upper);
         break;
     case VMGEN_DISPATCH_AUTO:
         vmgen_buf_append(&buf, "#if defined(__GNUC__) || defined(__clang__)\n");
         vmgen_buf_append(&buf, "    /* TODO: threaded dispatch */\n");
         vmgen_buf_append(&buf, "    /* Falling through to fnptr for now */\n");
         vmgen_buf_append(&buf, "#endif\n");
-        emit_fnptr_loop(&buf, spec);
+        emit_fnptr_loop(&buf, spec, upper);
         break;
     case VMGEN_DISPATCH_THREADED:
         vmgen_buf_append(&buf, "#if defined(__GNUC__) || defined(__clang__)\n");
