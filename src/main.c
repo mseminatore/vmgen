@@ -126,6 +126,13 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    rc = vmgen_gen_gc(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: GC generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
     rc = vmgen_gen_build(&spec, output_dir);
     if (rc != 0) {
         fprintf(stderr, "Error: build file generation failed\n");
