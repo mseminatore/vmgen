@@ -5,6 +5,10 @@
 #include "codegen/gen_vm.h"
 #include "codegen/gen_assembler.h"
 #include "codegen/gen_disasm.h"
+#include "codegen/gen_closures.h"
+#include "codegen/gen_modules.h"
+#include "codegen/gen_fibers.h"
+#include "codegen/gen_native.h"
 #include "spec/model.h"
 #include <stdio.h>
 #include <string.h>
@@ -273,6 +277,188 @@ void test_codegen(void) {
         free(content);
     }
 
+    /* --- Native function generation --- */
+    MODULE("Native Function Generation");
+
+    SUITE("Generate native.h and native.c");
+    ospec.dispatch = VMGEN_DISPATCH_SWITCH;
+    rc = vmgen_gen_native(&ospec, "test_output");
+    TESTEX("gen_native succeeds", rc == 0);
+
+    content = read_file("test_output/native.h");
+    TESTEX("native.h created", content != NULL);
+    if (content) {
+        TESTEX("native.h has guard", strstr(content, "#ifndef TESTVM_NATIVE_H") != NULL);
+        TESTEX("native.h has fn typedef", strstr(content, "testvm_native_fn_t") != NULL);
+        TESTEX("native.h has entry struct", strstr(content, "testvm_native_entry_t") != NULL);
+        TESTEX("native.h has table struct", strstr(content, "testvm_native_table_t") != NULL);
+        TESTEX("native.h has register", strstr(content, "testvm_native_register") != NULL);
+        TESTEX("native.h has find", strstr(content, "testvm_native_find") != NULL);
+        TESTEX("native.h has call", strstr(content, "testvm_native_call") != NULL);
+        free(content);
+    }
+
+    content = read_file("test_output/native.c");
+    TESTEX("native.c created", content != NULL);
+    if (content) {
+        TESTEX("native.c includes native.h", strstr(content, "#include \"native.h\"") != NULL);
+        TESTEX("native.c has table_init", strstr(content, "testvm_native_table_init") != NULL);
+        TESTEX("native.c has table_free", strstr(content, "testvm_native_table_free") != NULL);
+        TESTEX("native.c has register impl", strstr(content, "table->count++") != NULL);
+        TESTEX("native.c has find with strcmp", strstr(content, "strcmp(table->entries") != NULL);
+        TESTEX("native.c has call dispatch", strstr(content, "entries[index].fn(vm") != NULL);
+        free(content);
+    }
+
+    /* --- Closure generation --- */
+    MODULE("Closure Generation");
+
+    SUITE("Closures disabled skips gen");
+    {
+        vmgen_spec_t cspec;
+        make_test_spec(&cspec);
+        cspec.features.closures = false;
+        rc = vmgen_gen_closures(&cspec, "test_output");
+        TESTEX("gen_closures returns 0 when disabled", rc == 0);
+        vmgen_spec_free(&cspec);
+    }
+
+    SUITE("Generate closures.h and closures.c");
+    {
+        vmgen_spec_t cspec;
+        make_test_spec(&cspec);
+        cspec.features.closures = true;
+        rc = vmgen_gen_closures(&cspec, "test_output");
+        TESTEX("gen_closures succeeds", rc == 0);
+
+        content = read_file("test_output/closures.h");
+        TESTEX("closures.h created", content != NULL);
+        if (content) {
+            TESTEX("closures.h has guard", strstr(content, "#ifndef TESTVM_CLOSURES_H") != NULL);
+            TESTEX("closures.h has upvalue_t", strstr(content, "testvm_upvalue_t") != NULL);
+            TESTEX("closures.h has closure_t", strstr(content, "testvm_closure_t") != NULL);
+            TESTEX("closures.h has is_closed", strstr(content, "is_closed") != NULL);
+            TESTEX("closures.h has init_closure", strstr(content, "testvm_init_closure") != NULL);
+            TESTEX("closures.h has get_upvalue", strstr(content, "testvm_get_upvalue") != NULL);
+            TESTEX("closures.h has set_upvalue", strstr(content, "testvm_set_upvalue") != NULL);
+            TESTEX("closures.h has close_upvalue", strstr(content, "testvm_close_upvalue") != NULL);
+            free(content);
+        }
+
+        content = read_file("test_output/closures.c");
+        TESTEX("closures.c created", content != NULL);
+        if (content) {
+            TESTEX("closures.c includes closures.h", strstr(content, "#include \"closures.h\"") != NULL);
+            TESTEX("closures.c has init_closure impl", strstr(content, "testvm_init_closure") != NULL);
+            TESTEX("closures.c has free_closure impl", strstr(content, "testvm_free_closure") != NULL);
+            TESTEX("closures.c has upvalue alloc", strstr(content, "calloc") != NULL);
+            TESTEX("closures.c has close logic", strstr(content, "upvalue->location = &upvalue->closed") != NULL);
+            free(content);
+        }
+
+        vmgen_spec_free(&cspec);
+    }
+
+    /* --- Module generation --- */
+    MODULE("Module Generation");
+
+    SUITE("Modules disabled skips gen");
+    {
+        vmgen_spec_t mspec;
+        make_test_spec(&mspec);
+        mspec.features.modules_enabled = false;
+        rc = vmgen_gen_modules(&mspec, "test_output");
+        TESTEX("gen_modules returns 0 when disabled", rc == 0);
+        vmgen_spec_free(&mspec);
+    }
+
+    SUITE("Generate modules.h and modules.c");
+    {
+        vmgen_spec_t mspec;
+        make_test_spec(&mspec);
+        mspec.features.modules_enabled = true;
+        mspec.features.module_loading = VMGEN_MODULE_DYNAMIC;
+        rc = vmgen_gen_modules(&mspec, "test_output");
+        TESTEX("gen_modules succeeds", rc == 0);
+
+        content = read_file("test_output/modules.h");
+        TESTEX("modules.h created", content != NULL);
+        if (content) {
+            TESTEX("modules.h has guard", strstr(content, "#ifndef TESTVM_MODULES_H") != NULL);
+            TESTEX("modules.h has state enum", strstr(content, "TESTVM_MODULE_LOADED") != NULL);
+            TESTEX("modules.h has module_t", strstr(content, "testvm_module_t") != NULL);
+            TESTEX("modules.h has table_t", strstr(content, "testvm_module_table_t") != NULL);
+            TESTEX("modules.h has module_load", strstr(content, "testvm_module_load") != NULL);
+            TESTEX("modules.h has module_find", strstr(content, "testvm_module_find") != NULL);
+            TESTEX("modules.h has globals", strstr(content, "MODULE_MAX_GLOBALS") != NULL);
+            free(content);
+        }
+
+        content = read_file("test_output/modules.c");
+        TESTEX("modules.c created", content != NULL);
+        if (content) {
+            TESTEX("modules.c includes modules.h", strstr(content, "#include \"modules.h\"") != NULL);
+            TESTEX("modules.c has table_init", strstr(content, "testvm_module_table_init") != NULL);
+            TESTEX("modules.c has table_free", strstr(content, "testvm_module_table_free") != NULL);
+            TESTEX("modules.c has load impl", strstr(content, "testvm_module_load") != NULL);
+            TESTEX("modules.c has find impl", strstr(content, "testvm_module_find") != NULL);
+            TESTEX("modules.c has dynamic comment", strstr(content, "Dynamic loading") != NULL);
+            free(content);
+        }
+
+        vmgen_spec_free(&mspec);
+    }
+
+    /* --- Fiber generation --- */
+    MODULE("Fiber Generation");
+
+    SUITE("Fibers disabled skips gen");
+    {
+        vmgen_spec_t fspec;
+        make_test_spec(&fspec);
+        fspec.features.coroutines = false;
+        rc = vmgen_gen_fibers(&fspec, "test_output");
+        TESTEX("gen_fibers returns 0 when disabled", rc == 0);
+        vmgen_spec_free(&fspec);
+    }
+
+    SUITE("Generate fibers.h and fibers.c");
+    {
+        vmgen_spec_t fspec;
+        make_test_spec(&fspec);
+        fspec.features.coroutines = true;
+        rc = vmgen_gen_fibers(&fspec, "test_output");
+        TESTEX("gen_fibers succeeds", rc == 0);
+
+        content = read_file("test_output/fibers.h");
+        TESTEX("fibers.h created", content != NULL);
+        if (content) {
+            TESTEX("fibers.h has guard", strstr(content, "#ifndef TESTVM_FIBERS_H") != NULL);
+            TESTEX("fibers.h has status enum", strstr(content, "TESTVM_FIBER_CREATED") != NULL);
+            TESTEX("fibers.h has SUSPENDED", strstr(content, "TESTVM_FIBER_SUSPENDED") != NULL);
+            TESTEX("fibers.h has fiber_t", strstr(content, "testvm_fiber_t") != NULL);
+            TESTEX("fibers.h has fiber_new", strstr(content, "testvm_fiber_new") != NULL);
+            TESTEX("fibers.h has fiber_resume", strstr(content, "testvm_fiber_resume") != NULL);
+            TESTEX("fibers.h has fiber_yield", strstr(content, "testvm_fiber_yield") != NULL);
+            TESTEX("fibers.h has fiber_status", strstr(content, "testvm_fiber_status") != NULL);
+            free(content);
+        }
+
+        content = read_file("test_output/fibers.c");
+        TESTEX("fibers.c created", content != NULL);
+        if (content) {
+            TESTEX("fibers.c includes fibers.h", strstr(content, "#include \"fibers.h\"") != NULL);
+            TESTEX("fibers.c has fiber_new impl", strstr(content, "testvm_fiber_new") != NULL);
+            TESTEX("fibers.c has malloc", strstr(content, "malloc(sizeof") != NULL);
+            TESTEX("fibers.c has fiber_free impl", strstr(content, "testvm_fiber_free") != NULL);
+            TESTEX("fibers.c has status check in resume", strstr(content, "FIBER_DEAD") != NULL);
+            TESTEX("fibers.c has yield sets SUSPENDED", strstr(content, "FIBER_SUSPENDED") != NULL);
+            free(content);
+        }
+
+        vmgen_spec_free(&fspec);
+    }
+
     /* Cleanup */
     remove("test_output/opcodes.h");
     remove("test_output/vm.h");
@@ -281,6 +467,14 @@ void test_codegen(void) {
     remove("test_output/disasm.c");
     remove("test_output/assembler.h");
     remove("test_output/assembler.c");
+    remove("test_output/native.h");
+    remove("test_output/native.c");
+    remove("test_output/closures.h");
+    remove("test_output/closures.c");
+    remove("test_output/modules.h");
+    remove("test_output/modules.c");
+    remove("test_output/fibers.h");
+    remove("test_output/fibers.c");
 
     vmgen_spec_free(&ospec);
 }

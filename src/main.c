@@ -22,6 +22,7 @@
 #include "codegen/gen_closures.h"
 #include "codegen/gen_modules.h"
 #include "codegen/gen_fibers.h"
+#include "codegen/gen_native.h"
 #include "codegen/gen_build.h"
 
 static void print_usage(const char *progname) {
@@ -129,6 +130,34 @@ int main(int argc, char *argv[]) {
     rc = vmgen_gen_gc(&spec, output_dir);
     if (rc != 0) {
         fprintf(stderr, "Error: GC generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    rc = vmgen_gen_native(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: native function generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    rc = vmgen_gen_closures(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: closure generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    rc = vmgen_gen_modules(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: module generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    rc = vmgen_gen_fibers(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: fiber generation failed\n");
         vmgen_spec_free(&spec);
         return 1;
     }

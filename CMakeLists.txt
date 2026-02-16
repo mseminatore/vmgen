@@ -37,6 +37,7 @@ add_executable(vmgen
     src/codegen/gen_closures.c
     src/codegen/gen_modules.c
     src/codegen/gen_fibers.c
+    src/codegen/gen_native.c
     src/codegen/gen_build.c
 )
 
@@ -68,6 +69,7 @@ add_executable(vmgen_tests
     src/codegen/gen_closures.c
     src/codegen/gen_modules.c
     src/codegen/gen_fibers.c
+    src/codegen/gen_native.c
     src/codegen/gen_build.c
 )
 

@@ -30,7 +30,8 @@ int vmgen_gen_build(const vmgen_spec_t *spec, const char *output_dir) {
         "add_library(%s_vm\n"
         "    vm.c\n"
         "    assembler.c\n"
-        "    disasm.c\n",
+        "    disasm.c\n"
+        "    native.c\n",
         spec->name);
 
     if (spec->features.interned_strings) {
@@ -39,6 +40,18 @@ int vmgen_gen_build(const vmgen_spec_t *spec, const char *output_dir) {
 
     if (spec->features.gc_enabled) {
         vmgen_buf_append(&buf, "    gc.c\n");
+    }
+
+    if (spec->features.closures) {
+        vmgen_buf_append(&buf, "    closures.c\n");
+    }
+
+    if (spec->features.modules_enabled) {
+        vmgen_buf_append(&buf, "    modules.c\n");
+    }
+
+    if (spec->features.coroutines) {
+        vmgen_buf_append(&buf, "    fibers.c\n");
     }
 
     vmgen_buf_appendf(&buf,
