@@ -9,7 +9,12 @@
 #include "codegen/gen_modules.h"
 #include "codegen/gen_fibers.h"
 #include "codegen/gen_native.h"
+#include "codegen/gen_strings.h"
+#include "codegen/gen_gc.h"
+#include "codegen/gen_build.h"
 #include "spec/model.h"
+#include "spec/parser.h"
+#include "spec/validate.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -477,4 +482,99 @@ void test_codegen(void) {
     remove("test_output/fibers.c");
 
     vmgen_spec_free(&ospec);
+}
+
+/* Integration test: full pipeline with full.yaml */
+void test_integration(void) {
+    MODULE("Integration - Full Pipeline");
+
+    MKDIR("test_gen");
+
+    SUITE("Parse and validate full.yaml");
+    vmgen_spec_t spec;
+    vmgen_spec_init(&spec);
+    int rc = vmgen_parse_spec("specs/full.yaml", &spec);
+    TESTEX("parse full.yaml succeeds", rc == 0);
+    rc = vmgen_validate_spec(&spec);
+    TESTEX("validate full.yaml succeeds", rc == 0);
+
+    SUITE("Generate all files from full.yaml");
+    TESTEX("gen_opcodes", vmgen_gen_opcodes(&spec, "test_gen") == 0);
+    TESTEX("gen_vm", vmgen_gen_vm(&spec, "test_gen") == 0);
+    TESTEX("gen_assembler", vmgen_gen_assembler(&spec, "test_gen") == 0);
+    TESTEX("gen_disasm", vmgen_gen_disasm(&spec, "test_gen") == 0);
+    TESTEX("gen_strings", vmgen_gen_strings(&spec, "test_gen") == 0);
+    TESTEX("gen_gc", vmgen_gen_gc(&spec, "test_gen") == 0);
+    TESTEX("gen_native", vmgen_gen_native(&spec, "test_gen") == 0);
+    TESTEX("gen_closures", vmgen_gen_closures(&spec, "test_gen") == 0);
+    TESTEX("gen_modules", vmgen_gen_modules(&spec, "test_gen") == 0);
+    TESTEX("gen_fibers", vmgen_gen_fibers(&spec, "test_gen") == 0);
+    TESTEX("gen_build", vmgen_gen_build(&spec, "test_gen") == 0);
+
+    SUITE("Verify all output files exist");
+    char *content;
+    content = read_file("test_gen/opcodes.h");
+    TESTEX("opcodes.h exists", content != NULL);
+    if (content) { TESTEX("opcodes.h has fullvm prefix", strstr(content, "FULLVM_OP_") != NULL); free(content); }
+
+    content = read_file("test_gen/vm.h");
+    TESTEX("vm.h exists", content != NULL);
+    if (content) { TESTEX("vm.h has fullvm struct", strstr(content, "fullvm_vm_t") != NULL); free(content); }
+
+    content = read_file("test_gen/vm.c");
+    TESTEX("vm.c exists", content != NULL);
+    if (content) { TESTEX("vm.c has dispatch table (fnptr)", strstr(content, "fullvm_dispatch_table") != NULL); free(content); }
+
+    content = read_file("test_gen/strings.h");
+    TESTEX("strings.h exists", content != NULL);
+    if (content) free(content);
+
+    content = read_file("test_gen/gc.h");
+    TESTEX("gc.h exists", content != NULL);
+    if (content) free(content);
+
+    content = read_file("test_gen/closures.h");
+    TESTEX("closures.h exists", content != NULL);
+    if (content) { TESTEX("closures has fullvm upvalue", strstr(content, "fullvm_upvalue_t") != NULL); free(content); }
+
+    content = read_file("test_gen/modules.h");
+    TESTEX("modules.h exists", content != NULL);
+    if (content) { TESTEX("modules has fullvm module", strstr(content, "fullvm_module_t") != NULL); free(content); }
+
+    content = read_file("test_gen/fibers.h");
+    TESTEX("fibers.h exists", content != NULL);
+    if (content) { TESTEX("fibers has fullvm fiber", strstr(content, "fullvm_fiber_t") != NULL); free(content); }
+
+    content = read_file("test_gen/CMakeLists.txt");
+    TESTEX("CMakeLists.txt exists", content != NULL);
+    if (content) {
+        TESTEX("CMakeLists includes closures.c", strstr(content, "closures.c") != NULL);
+        TESTEX("CMakeLists includes modules.c", strstr(content, "modules.c") != NULL);
+        TESTEX("CMakeLists includes fibers.c", strstr(content, "fibers.c") != NULL);
+        free(content);
+    }
+
+    /* Cleanup */
+    remove("test_gen/opcodes.h");
+    remove("test_gen/vm.h");
+    remove("test_gen/vm.c");
+    remove("test_gen/assembler.h");
+    remove("test_gen/assembler.c");
+    remove("test_gen/disasm.h");
+    remove("test_gen/disasm.c");
+    remove("test_gen/strings.h");
+    remove("test_gen/strings.c");
+    remove("test_gen/gc.h");
+    remove("test_gen/gc.c");
+    remove("test_gen/native.h");
+    remove("test_gen/native.c");
+    remove("test_gen/closures.h");
+    remove("test_gen/closures.c");
+    remove("test_gen/modules.h");
+    remove("test_gen/modules.c");
+    remove("test_gen/fibers.h");
+    remove("test_gen/fibers.c");
+    remove("test_gen/CMakeLists.txt");
+
+    vmgen_spec_free(&spec);
 }

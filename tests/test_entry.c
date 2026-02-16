@@ -6,6 +6,7 @@
 /* Forward declarations for test modules */
 void test_parser(void);
 void test_codegen(void);
+void test_integration(void);
 
 void test_main(int argc, char *argv[]) {
     (void)argc;
@@ -13,4 +14,5 @@ void test_main(int argc, char *argv[]) {
 
     test_parser();
     test_codegen();
+    test_integration();
 }
