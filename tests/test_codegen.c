@@ -850,4 +850,97 @@ void test_actions(void) {
         TESTEX("ADD stack_effect is -1", spec.instructions[2].stack_effect == -1);
         vmgen_spec_free(&spec);
     }
+
+    /* --- GC safety --- */
+    MODULE("GC Safety in Generated Code");
+
+    SUITE("GC-enabled spec has inhibit wrapping");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_MARK_SWEEP;
+        spec.instructions[1].action = vmgen_strdup("pop b; pop a; push a + b");
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm with gc succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c has gc_inhibit", strstr(content, "testvm_gc_inhibit") != NULL);
+            TESTEX("vm.c has gc_allow", strstr(content, "testvm_gc_allow") != NULL);
+            free(content);
+        }
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("vm.h includes gc.h", strstr(hdr, "#include \"gc.h\"") != NULL);
+            TESTEX("vm.h has gc pointer", strstr(hdr, "testvm_gc_t *gc") != NULL);
+            free(hdr);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("No-GC spec has no inhibit wrapping");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = false;
+        spec.instructions[1].action = vmgen_strdup("pop b; pop a; push a + b");
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm without gc succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c has no gc_inhibit", strstr(content, "gc_inhibit") == NULL);
+            TESTEX("vm.c has no gc_allow", strstr(content, "gc_allow") == NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("GC struct has inhibit_count");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_MARK_SWEEP;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_gc(&spec, "test_output");
+        TESTEX("gen_gc succeeds", rc == 0);
+
+        char *content = read_file("test_output/gc.h");
+        TESTEX("gc.h created", content != NULL);
+        if (content) {
+            TESTEX("gc.h has inhibit_count", strstr(content, "inhibit_count") != NULL);
+            TESTEX("gc.h has gc_inhibit decl", strstr(content, "testvm_gc_inhibit") != NULL);
+            TESTEX("gc.h has gc_allow decl", strstr(content, "testvm_gc_allow") != NULL);
+            free(content);
+        }
+
+        char *impl = read_file("test_output/gc.c");
+        TESTEX("gc.c created", impl != NULL);
+        if (impl) {
+            TESTEX("gc.c checks inhibit in alloc", strstr(impl, "inhibit_count == 0") != NULL);
+            TESTEX("gc.c checks inhibit in collect", strstr(impl, "inhibit_count > 0") != NULL);
+            free(impl);
+        }
+
+        remove("test_output/gc.h");
+        remove("test_output/gc.c");
+        vmgen_spec_free(&spec);
+    }
 }

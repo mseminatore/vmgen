@@ -84,4 +84,12 @@ target_include_directories(vmgen_tests PRIVATE
 
 target_link_libraries(vmgen_tests PRIVATE yaml)
 
+# vmgen_spec_t is ~127KB (instructions[256]); tests create several on the stack.
+# Increase stack size to 4MB so Debug builds don't overflow.
+if(MSVC)
+    target_link_options(vmgen_tests PRIVATE /STACK:4194304)
+else()
+    target_link_options(vmgen_tests PRIVATE -Wl,-z,stacksize=4194304)
+endif()
+
 add_test(NAME vmgen_tests COMMAND vmgen_tests)

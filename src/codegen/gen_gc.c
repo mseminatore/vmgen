@@ -62,6 +62,7 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
         "    size_t bytes_allocated;\n"
         "    size_t next_gc;\n"
         "    int enabled;\n"
+        "    int inhibit_count;\n"
         "} %s_gc_t;\n\n",
         upper, spec->name, spec->name);
 
@@ -71,10 +72,14 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
         "void  %s_gc_free(%s_gc_t *gc);\n"
         "void *%s_gc_alloc(%s_gc_t *gc, %s_obj_type_t type, size_t size);\n"
         "void  %s_gc_mark_object(%s_obj_t *obj);\n"
-        "void  %s_gc_collect(%s_gc_t *gc);\n",
+        "void  %s_gc_collect(%s_gc_t *gc);\n"
+        "void  %s_gc_inhibit(%s_gc_t *gc);\n"
+        "void  %s_gc_allow(%s_gc_t *gc);\n",
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name, spec->name,
+        spec->name, spec->name,
+        spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name);
 
@@ -104,6 +109,7 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
         "    gc->bytes_allocated = 0;\n"
         "    gc->next_gc = %s_GC_INITIAL_THRESHOLD;\n"
         "    gc->enabled = 1;\n"
+        "    gc->inhibit_count = 0;\n"
         "}\n\n",
         spec->name, spec->name, upper);
 
@@ -125,6 +131,10 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
     /* alloc */
     vmgen_buf_appendf(&buf,
         "void *%s_gc_alloc(%s_gc_t *gc, %s_obj_type_t type, size_t size) {\n"
+        "    if (gc->enabled && gc->inhibit_count == 0 &&\n"
+        "        gc->bytes_allocated + size > gc->next_gc) {\n"
+        "        %s_gc_collect(gc);\n"
+        "    }\n"
         "    %s_obj_t *obj = (%s_obj_t *)malloc(size);\n"
         "    if (!obj) {\n"
         "        fprintf(stderr, \"gc: out of memory\\n\");\n"
@@ -139,6 +149,7 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
         "    return obj;\n"
         "}\n\n",
         spec->name, spec->name, spec->name,
+        spec->name,
         spec->name, spec->name);
 
     /* mark */
@@ -153,7 +164,7 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
     /* sweep */
     vmgen_buf_appendf(&buf,
         "void %s_gc_collect(%s_gc_t *gc) {\n"
-        "    if (!gc->enabled) return;\n\n"
+        "    if (!gc->enabled || gc->inhibit_count > 0) return;\n\n"
         "    /* Sweep: free unmarked objects */\n"
         "    %s_obj_t **obj = &gc->objects;\n"
         "    while (*obj) {\n"
@@ -168,6 +179,17 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
         "        }\n"
         "    }\n\n"
         "    gc->next_gc = gc->bytes_allocated * 2;\n"
+        "}\n\n",
+        spec->name, spec->name,
+        spec->name, spec->name);
+
+    /* inhibit/allow */
+    vmgen_buf_appendf(&buf,
+        "void %s_gc_inhibit(%s_gc_t *gc) {\n"
+        "    gc->inhibit_count++;\n"
+        "}\n\n"
+        "void %s_gc_allow(%s_gc_t *gc) {\n"
+        "    if (gc->inhibit_count > 0) gc->inhibit_count--;\n"
         "}\n",
         spec->name, spec->name,
         spec->name, spec->name);

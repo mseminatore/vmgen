@@ -82,7 +82,11 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
 
     vmgen_buf_append(&buf, "#include <stdint.h>\n");
     vmgen_buf_append(&buf, "#include <stddef.h>\n");
-    vmgen_buf_append(&buf, "#include \"opcodes.h\"\n\n");
+    vmgen_buf_append(&buf, "#include \"opcodes.h\"\n");
+    if (spec->features.gc_enabled) {
+        vmgen_buf_append(&buf, "#include \"gc.h\"\n");
+    }
+    vmgen_buf_appendc(&buf, '\n');
 
     /* Value type */
     if (spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION) {
@@ -155,6 +159,10 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
 
     if (spec->features.debug_tracing) {
         vmgen_buf_append(&buf, "    int trace_enabled;\n");
+    }
+
+    if (spec->features.gc_enabled) {
+        vmgen_buf_appendf(&buf, "    %s_gc_t *gc;\n", spec->name);
     }
 
     vmgen_buf_appendf(&buf, "} %s_vm_t;\n\n", spec->name);
@@ -261,7 +269,13 @@ static void emit_switch_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
         }
 
         /* Emit action body */
+        if (spec->features.gc_enabled) {
+            vmgen_buf_appendf(buf, "            if (vm->gc) %s_gc_inhibit(vm->gc);\n", spec->name);
+        }
         emit_action_body(buf, spec, instr, "            ");
+        if (spec->features.gc_enabled && !action_has_terminal(instr)) {
+            vmgen_buf_appendf(buf, "            if (vm->gc) %s_gc_allow(vm->gc);\n", spec->name);
+        }
         if (!action_has_terminal(instr)) {
             vmgen_buf_append(buf, "            break;\n");
         }
@@ -303,11 +317,17 @@ static void emit_fnptr_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
         bool has_action = (instr->action && instr->action[0]) ||
                           (instr->action_c && instr->action_c[0]);
         bool terminal = action_has_terminal(instr);
-        /* Suppress unused vm warning for handlers that don't reference vm */
-        if ((!has_action && instr->operand_count == 0) || terminal) {
+        bool uses_vm = has_action || instr->operand_count > 0 || spec->features.gc_enabled;
+        if (!uses_vm) {
             vmgen_buf_append(buf, "    (void)vm;\n");
         }
+        if (spec->features.gc_enabled) {
+            vmgen_buf_appendf(buf, "    if (vm->gc) %s_gc_inhibit(vm->gc);\n", spec->name);
+        }
         emit_action_body(buf, spec, instr, "    ");
+        if (spec->features.gc_enabled && !terminal) {
+            vmgen_buf_appendf(buf, "    if (vm->gc) %s_gc_allow(vm->gc);\n", spec->name);
+        }
 
         if (!terminal) {
             vmgen_buf_append(buf, "    return 0;\n");
