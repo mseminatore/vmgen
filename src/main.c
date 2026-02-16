@@ -108,6 +108,13 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    rc = vmgen_gen_build(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: build file generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
     vmgen_spec_free(&spec);
     printf("vmgen: done\n");
     return 0;
