@@ -103,6 +103,70 @@ void test_parser(void) {
 
     vmgen_spec_free(&parsed);
 
+    /* --- Parse full.yaml --- */
+    SUITE("Parse full.yaml");
+
+    vmgen_spec_t full;
+    vmgen_spec_init(&full);
+    rc = vmgen_parse_spec("specs/full.yaml", &full);
+    TESTEX("full parse succeeds", rc == 0);
+    TESTEX("full name is 'fullvm'", strcmp(full.name, "fullvm") == 0);
+    TESTEX("full version is '2.0'", strcmp(full.version, "2.0") == 0);
+    TESTEX("full stack is dynamic", full.stack.type == VMGEN_STACK_DYNAMIC);
+    TESTEX("full stack depth 4096", full.stack.max_depth == 4096);
+    TESTEX("full value_type tagged_union", full.stack.value_type == VMGEN_VALUE_TAGGED_UNION);
+    TESTEX("full has all 5 types", full.type_flags == (VMGEN_TYPE_INT64 | VMGEN_TYPE_DOUBLE | VMGEN_TYPE_BOOL | VMGEN_TYPE_STRING | VMGEN_TYPE_OBJECT));
+    TESTEX("full interned_strings on", full.features.interned_strings == 1);
+    TESTEX("full gc enabled", full.features.gc_enabled == 1);
+    TESTEX("full gc mark_sweep", full.features.gc_strategy == VMGEN_GC_MARK_SWEEP);
+    TESTEX("full closures on", full.features.closures == 1);
+    TESTEX("full modules on", full.features.modules_enabled == 1);
+    TESTEX("full modules dynamic", full.features.module_loading == VMGEN_MODULE_DYNAMIC);
+    TESTEX("full coroutines on", full.features.coroutines == 1);
+    TESTEX("full debug_tracing on", full.features.debug_tracing == 1);
+    TESTEX("full dispatch auto", full.dispatch == VMGEN_DISPATCH_AUTO);
+    TESTEX("full has 13 instructions", full.instruction_count == 13);
+    TESTEX("full CALL has 2 operands", full.instructions[10].operand_count == 2);
+    TESTEX("full CALL arity is uint8", full.instructions[10].operands[1].type == VMGEN_OPERAND_UINT8);
+    TESTEX("full has 3 const types", full.const_flags == (VMGEN_CONST_INT64 | VMGEN_CONST_DOUBLE | VMGEN_CONST_STRING));
+    TESTEX("full spec validates", vmgen_validate_spec(&full) == 0);
+    vmgen_spec_free(&full);
+
+    /* --- Advanced validation checks --- */
+    MODULE("Advanced Validation");
+
+    SUITE("Interned strings without string type");
+    vmgen_spec_t v;
+    vmgen_spec_init(&v);
+    snprintf(v.name, sizeof(v.name), "test");
+    snprintf(v.version, sizeof(v.version), "1.0");
+    snprintf(v.instructions[0].name, VMGEN_MAX_NAME, "HALT");
+    v.instruction_count = 1;
+    v.features.interned_strings = 1;
+    v.type_flags = VMGEN_TYPE_INT64;  /* no string type */
+    TESTEX("interned_strings without string type fails",
+           vmgen_validate_spec(&v) != 0);
+
+    SUITE("NaN boxing with non-tagged-union");
+    vmgen_spec_init(&v);
+    snprintf(v.name, sizeof(v.name), "test");
+    snprintf(v.version, sizeof(v.version), "1.0");
+    snprintf(v.instructions[0].name, VMGEN_MAX_NAME, "HALT");
+    v.instruction_count = 1;
+    v.features.nan_boxing = 1;
+    v.stack.value_type = VMGEN_VALUE_DOUBLE;
+    TESTEX("nan_boxing with double value_type fails",
+           vmgen_validate_spec(&v) != 0);
+
+    SUITE("Valid minimal spec passes");
+    vmgen_spec_init(&v);
+    snprintf(v.name, sizeof(v.name), "ok");
+    snprintf(v.version, sizeof(v.version), "1.0");
+    snprintf(v.instructions[0].name, VMGEN_MAX_NAME, "HALT");
+    v.instruction_count = 1;
+    TESTEX("clean minimal spec passes", vmgen_validate_spec(&v) == 0);
+    vmgen_spec_free(&v);
+
     /* --- YAML Parsing: nonexistent file --- */
     SUITE("Parse error handling");
 
