@@ -1,0 +1,88 @@
+vm:
+  name: "fullvm"
+  version: "2.0"
+
+  stack:
+    type: "dynamic"
+    max_depth: 4096
+    value_type: "tagged_union"
+
+  types:
+    - int64
+    - double
+    - bool
+    - string
+    - object
+
+  features:
+    interned_strings: true
+    garbage_collection:
+      enabled: true
+      strategy: "mark_sweep"
+    closures: true
+    modules:
+      enabled: true
+      loading: "dynamic"
+    coroutines: true
+    debug_tracing: true
+    nan_boxing: false
+
+  dispatch: "auto"
+
+  instructions:
+    - name: PUSH_CONST
+      operands: [{ name: index, type: uint16 }]
+      description: "Push constant at index onto stack"
+
+    - name: POP
+      operands: []
+      description: "Pop top of stack"
+
+    - name: ADD
+      operands: []
+      description: "Pop two values, push their sum"
+
+    - name: SUB
+      operands: []
+      description: "Pop two values, push their difference"
+
+    - name: MUL
+      operands: []
+      description: "Pop two values, push their product"
+
+    - name: DIV
+      operands: []
+      description: "Pop two values, push their quotient"
+
+    - name: EQ
+      operands: []
+      description: "Pop two values, push true if equal"
+
+    - name: LT
+      operands: []
+      description: "Pop two values, push true if a < b"
+
+    - name: JUMP
+      operands: [{ name: offset, type: int16 }]
+      description: "Unconditional jump by offset"
+
+    - name: JUMP_IF_FALSE
+      operands: [{ name: offset, type: int16 }]
+      description: "Jump by offset if top of stack is false"
+
+    - name: CALL
+      operands: [{ name: func_index, type: uint16 }, { name: arity, type: uint8 }]
+      description: "Call function at index with arity arguments"
+
+    - name: RETURN
+      operands: []
+      description: "Return from current function"
+
+    - name: HALT
+      operands: []
+      description: "Stop execution"
+
+  constants:
+    - int64
+    - double
+    - string
