@@ -3,6 +3,8 @@
 #include "codegen/emit.h"
 #include "codegen/gen_opcodes.h"
 #include "codegen/gen_vm.h"
+#include "codegen/gen_assembler.h"
+#include "codegen/gen_disasm.h"
 #include "spec/model.h"
 #include <stdio.h>
 #include <string.h>
@@ -214,10 +216,71 @@ void test_codegen(void) {
         free(content);
     }
 
+    /* --- Disassembler generation --- */
+    MODULE("Disassembler Generation");
+
+    SUITE("Generate disasm.h and disasm.c");
+    ospec.dispatch = VMGEN_DISPATCH_SWITCH;
+    rc = vmgen_gen_disasm(&ospec, "test_output");
+    TESTEX("gen_disasm succeeds", rc == 0);
+
+    content = read_file("test_output/disasm.h");
+    TESTEX("disasm.h created", content != NULL);
+    if (content) {
+        TESTEX("disasm.h has guard", strstr(content, "#ifndef TESTVM_DISASM_H") != NULL);
+        TESTEX("disasm.h has disasm_instruction", strstr(content, "testvm_disasm_instruction") != NULL);
+        TESTEX("disasm.h has disasm", strstr(content, "testvm_disasm") != NULL);
+        free(content);
+    }
+
+    content = read_file("test_output/disasm.c");
+    TESTEX("disasm.c created", content != NULL);
+    if (content) {
+        TESTEX("disasm.c includes opcodes.h", strstr(content, "#include \"opcodes.h\"") != NULL);
+        TESTEX("disasm.c has switch on opcode", strstr(content, "switch (opcode)") != NULL);
+        TESTEX("disasm.c has PUSH_CONST case", strstr(content, "TESTVM_OP_PUSH_CONST") != NULL);
+        TESTEX("disasm.c has full disasm func", strstr(content, "testvm_disasm(") != NULL);
+        free(content);
+    }
+
+    /* --- Assembler generation --- */
+    MODULE("Assembler Generation");
+
+    SUITE("Generate assembler.h and assembler.c");
+    rc = vmgen_gen_assembler(&ospec, "test_output");
+    TESTEX("gen_assembler succeeds", rc == 0);
+
+    content = read_file("test_output/assembler.h");
+    TESTEX("assembler.h created", content != NULL);
+    if (content) {
+        TESTEX("asm.h has guard", strstr(content, "#ifndef TESTVM_ASSEMBLER_H") != NULL);
+        TESTEX("asm.h has assembler struct", strstr(content, "testvm_assembler_t") != NULL);
+        TESTEX("asm.h has asm_init", strstr(content, "testvm_asm_init") != NULL);
+        TESTEX("asm.h has asm_assemble", strstr(content, "testvm_asm_assemble") != NULL);
+        TESTEX("asm.h has emit_byte", strstr(content, "testvm_asm_emit_byte") != NULL);
+        free(content);
+    }
+
+    content = read_file("test_output/assembler.c");
+    TESTEX("assembler.c created", content != NULL);
+    if (content) {
+        TESTEX("asm.c has mnemonic matching", strstr(content, "strcmp(mnemonic,") != NULL);
+        TESTEX("asm.c handles PUSH_CONST", strstr(content, "\"PUSH_CONST\"") != NULL);
+        TESTEX("asm.c handles HALT", strstr(content, "\"HALT\"") != NULL);
+        TESTEX("asm.c has assemble function", strstr(content, "testvm_asm_assemble(") != NULL);
+        TESTEX("asm.c has emit_u16", strstr(content, "testvm_asm_emit_u16") != NULL);
+        TESTEX("asm.c handles unknown mnemonic", strstr(content, "unknown mnemonic") != NULL);
+        free(content);
+    }
+
     /* Cleanup */
     remove("test_output/opcodes.h");
     remove("test_output/vm.h");
     remove("test_output/vm.c");
+    remove("test_output/disasm.h");
+    remove("test_output/disasm.c");
+    remove("test_output/assembler.h");
+    remove("test_output/assembler.c");
 
     vmgen_spec_free(&ospec);
 }

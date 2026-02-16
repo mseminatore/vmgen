@@ -94,6 +94,20 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    rc = vmgen_gen_assembler(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: assembler generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    rc = vmgen_gen_disasm(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: disassembler generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
     vmgen_spec_free(&spec);
     printf("vmgen: done\n");
     return 0;
