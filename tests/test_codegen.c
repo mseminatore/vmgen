@@ -175,6 +175,10 @@ void test_codegen(void) {
         TESTEX("vm.h has vm_pop", strstr(content, "testvm_vm_pop") != NULL);
         TESTEX("vm.h has stack array", strstr(content, "stack[") != NULL);
         TESTEX("vm.h includes opcodes.h", strstr(content, "#include \"opcodes.h\"") != NULL);
+        TESTEX("vm.h has const pool struct", strstr(content, "testvm_const_pool_t") != NULL);
+        TESTEX("vm.h has MAX_CONSTANTS", strstr(content, "TESTVM_MAX_CONSTANTS") != NULL);
+        TESTEX("vm.h has add_constant proto", strstr(content, "testvm_vm_add_constant") != NULL);
+        TESTEX("vm.h has constants in vm struct", strstr(content, "constants") != NULL);
         free(content);
     }
 
@@ -190,6 +194,8 @@ void test_codegen(void) {
         TESTEX("vm.c has stack overflow check", strstr(content, "stack overflow") != NULL);
         TESTEX("vm.c has stack underflow check", strstr(content, "stack underflow") != NULL);
         TESTEX("vm.c has READ_UINT16 macro", strstr(content, "READ_UINT16") != NULL);
+        TESTEX("vm.c has add_constant", strstr(content, "testvm_vm_add_constant") != NULL);
+        TESTEX("vm.c has constant pool overflow", strstr(content, "constant pool overflow") != NULL);
         free(content);
     }
 

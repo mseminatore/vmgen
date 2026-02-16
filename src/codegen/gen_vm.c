@@ -117,6 +117,15 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         vmgen_buf_appendf(&buf, "typedef int64_t %s_value_t;\n\n", spec->name);
     }
 
+    /* Constant pool */
+    vmgen_buf_appendf(&buf,
+        "#define %s_MAX_CONSTANTS 256\n\n"
+        "typedef struct {\n"
+        "    %s_value_t values[%s_MAX_CONSTANTS];\n"
+        "    int count;\n"
+        "} %s_const_pool_t;\n\n",
+        upper, spec->name, upper, spec->name);
+
     /* VM state struct */
     vmgen_buf_appendf(&buf,
         "typedef struct {\n"
@@ -126,17 +135,21 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "    %s_value_t stack[%d];\n"
         "    int sp;\n"
         "    int running;\n"
+        "    %s_const_pool_t constants;\n"
         "} %s_vm_t;\n\n",
-        spec->name, spec->stack.max_depth, spec->name);
+        spec->name, spec->stack.max_depth,
+        spec->name, spec->name);
 
     /* API prototypes */
     vmgen_buf_appendf(&buf,
         "void %s_vm_init(%s_vm_t *vm);\n"
         "int  %s_vm_run(%s_vm_t *vm, const uint8_t *code, size_t code_len);\n"
         "void %s_vm_push(%s_vm_t *vm, %s_value_t value);\n"
-        "%s_value_t %s_vm_pop(%s_vm_t *vm);\n",
+        "%s_value_t %s_vm_pop(%s_vm_t *vm);\n"
+        "int  %s_vm_add_constant(%s_vm_t *vm, %s_value_t value);\n",
         spec->name, spec->name,
         spec->name, spec->name,
+        spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name);
 
@@ -306,6 +319,19 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         "    memset(vm, 0, sizeof(*vm));\n"
         "}\n\n",
         spec->name, spec->name);
+
+    /* add_constant */
+    vmgen_buf_appendf(&buf,
+        "int %s_vm_add_constant(%s_vm_t *vm, %s_value_t value) {\n"
+        "    if (vm->constants.count >= %s_MAX_CONSTANTS) {\n"
+        "        fprintf(stderr, \"constant pool overflow\\n\");\n"
+        "        return -1;\n"
+        "    }\n"
+        "    int index = vm->constants.count;\n"
+        "    vm->constants.values[vm->constants.count++] = value;\n"
+        "    return index;\n"
+        "}\n\n",
+        spec->name, spec->name, spec->name, upper);
 
     /* Emit function-pointer handlers if fnptr or auto dispatch */
     if (spec->dispatch == VMGEN_DISPATCH_FNPTR ||
