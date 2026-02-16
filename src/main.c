@@ -6,6 +6,14 @@
 #include "spec/validate.h"
 #include "codegen/emit.h"
 #include "codegen/gen_opcodes.h"
+
+#ifdef _WIN32
+#include <direct.h>
+#define MKDIRP(d) _mkdir(d)
+#else
+#include <sys/stat.h>
+#define MKDIRP(d) mkdir(d, 0755)
+#endif
 #include "codegen/gen_vm.h"
 #include "codegen/gen_assembler.h"
 #include "codegen/gen_disasm.h"
@@ -78,6 +86,9 @@ int main(int argc, char *argv[]) {
 
     printf("vmgen: generating VM '%s' v%s -> %s/\n",
            spec.name, spec.version, output_dir);
+
+    /* Ensure output directory exists */
+    MKDIRP(output_dir);
 
     /* Code generation */
     rc = vmgen_gen_opcodes(&spec, output_dir);

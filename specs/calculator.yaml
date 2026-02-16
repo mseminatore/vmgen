@@ -1,0 +1,67 @@
+vm:
+  name: "calc"
+  version: "1.0"
+
+  stack:
+    type: "fixed"
+    max_depth: 256
+    value_type: "double"
+
+  types:
+    - double
+
+  features:
+    interned_strings: false
+    garbage_collection:
+      enabled: false
+    closures: false
+    modules:
+      enabled: false
+    coroutines: false
+    debug_tracing: true
+
+  dispatch: "switch"
+
+  instructions:
+    - name: PUSH_CONST
+      operands: [{ name: index, type: uint16 }]
+      description: "Push constant at index onto stack"
+
+    - name: POP
+      operands: []
+      description: "Pop top of stack"
+
+    - name: DUP
+      operands: []
+      description: "Duplicate top of stack"
+
+    - name: ADD
+      operands: []
+      description: "Pop two values, push their sum"
+
+    - name: SUB
+      operands: []
+      description: "Pop two values, push their difference"
+
+    - name: MUL
+      operands: []
+      description: "Pop two values, push their product"
+
+    - name: DIV
+      operands: []
+      description: "Pop two values, push their quotient"
+
+    - name: NEG
+      operands: []
+      description: "Negate top of stack"
+
+    - name: PRINT
+      operands: []
+      description: "Pop and print top of stack"
+
+    - name: HALT
+      operands: []
+      description: "Stop execution"
+
+  constants:
+    - double
