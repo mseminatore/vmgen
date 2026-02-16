@@ -30,10 +30,17 @@ int vmgen_gen_build(const vmgen_spec_t *spec, const char *output_dir) {
         "add_library(%s_vm\n"
         "    vm.c\n"
         "    assembler.c\n"
-        "    disasm.c\n"
+        "    disasm.c\n",
+        spec->name);
+
+    if (spec->features.interned_strings) {
+        vmgen_buf_append(&buf, "    strings.c\n");
+    }
+
+    vmgen_buf_appendf(&buf,
         ")\n\n"
         "target_include_directories(%s_vm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})\n\n",
-        spec->name, spec->name);
+        spec->name);
 
     /* Optional: example main that runs the VM */
     vmgen_buf_appendf(&buf,
