@@ -26,42 +26,54 @@ vm:
     - name: PUSH_CONST
       operands: [{ name: index, type: uint16 }]
       description: "Push constant at index onto stack"
+      action: "push constants[$index]"
 
     - name: POP
       operands: []
       description: "Pop top of stack"
+      action: "pop _"
 
     - name: DUP
       operands: []
       description: "Duplicate top of stack"
+      action: "peek a; push a"
 
     - name: ADD
       operands: []
       description: "Pop two values, push their sum"
+      action: "pop b; pop a; push a + b"
 
     - name: SUB
       operands: []
       description: "Pop two values, push their difference"
+      action: "pop b; pop a; push a - b"
 
     - name: MUL
       operands: []
       description: "Pop two values, push their product"
+      action: "pop b; pop a; push a * b"
 
     - name: DIV
       operands: []
       description: "Pop two values, push their quotient"
+      action: "pop b; pop a; push a / b"
 
     - name: NEG
       operands: []
       description: "Negate top of stack"
+      action: "pop a; push -a"
 
     - name: PRINT
       operands: []
       description: "Pop and print top of stack"
+      action_c: |
+        double val = calc_vm_pop(vm);
+        printf("%g\n", val);
 
     - name: HALT
       operands: []
       description: "Stop execution"
+      action: "halt"
 
   constants:
     - double

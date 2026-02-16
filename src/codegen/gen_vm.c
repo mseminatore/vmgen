@@ -1,5 +1,7 @@
 #include "gen_vm.h"
 #include "emit.h"
+#include "action_parser.h"
+#include "action_emit.h"
 #include "../util/buffer.h"
 #include <stdio.h>
 #include <string.h>
@@ -178,6 +180,54 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
     return rc;
 }
 
+/* ---- Emit instruction action body ---- */
+
+static void emit_action_body(vmgen_buf_t *buf, const vmgen_spec_t *spec,
+                             const vmgen_instr_t *instr, const char *indent) {
+    if (instr->action_c && instr->action_c[0]) {
+        /* Inline C: emit verbatim with indentation */
+        vmgen_action_emit_inline_c(buf, indent, instr->action_c);
+    } else if (instr->action && instr->action[0]) {
+        /* DSL action: parse and emit */
+        vmgen_action_t action;
+        if (vmgen_action_parse(instr->action, &action) == 0) {
+            /* Stack effect validation warning */
+            if (instr->stack_effect_set) {
+                int computed = vmgen_action_stack_effect(&action);
+                if (computed != instr->stack_effect) {
+                    fprintf(stderr,
+                        "vmgen: warning: %s declared stack_effect=%d but computed=%d\n",
+                        instr->name, instr->stack_effect, computed);
+                }
+            }
+            vmgen_action_emit(buf, indent, spec, instr, &action);
+            vmgen_action_free(&action);
+        } else {
+            fprintf(stderr, "vmgen: error parsing action for %s: %s\n",
+                    instr->name, action.error);
+            vmgen_buf_appendf(buf, "%s/* ERROR: failed to parse action: %s */\n",
+                              indent, action.error);
+        }
+    } else {
+        /* No action defined: emit TODO stub */
+        vmgen_buf_appendf(buf, "%s/* TODO: implement %s */\n", indent, instr->name);
+    }
+}
+
+/* Check if an instruction's action ends with halt (no break/return needed) */
+static int action_has_terminal(const vmgen_instr_t *instr) {
+    if (instr->action && instr->action[0]) {
+        vmgen_action_t action;
+        if (vmgen_action_parse(instr->action, &action) == 0 && action.count > 0) {
+            vmgen_act_type_t last = action.stmts[action.count - 1].type;
+            vmgen_action_free(&action);
+            return last == ACT_HALT;
+        }
+        vmgen_action_free(&action);
+    }
+    return 0;
+}
+
 /* ---- Generate vm.c (switch dispatch) ---- */
 
 static void emit_switch_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
@@ -210,15 +260,12 @@ static void emit_switch_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
                               read_macro_for(instr->operands[j].type));
         }
 
-        /* Suppress unused variable warnings for operands */
-        for (int j = 0; j < instr->operand_count; j++) {
-            vmgen_buf_appendf(buf, "            (void)%s;\n",
-                              instr->operands[j].name);
+        /* Emit action body */
+        emit_action_body(buf, spec, instr, "            ");
+        if (!action_has_terminal(instr)) {
+            vmgen_buf_append(buf, "            break;\n");
         }
-
-        vmgen_buf_appendf(buf, "            /* TODO: implement %s */\n",
-                          instr->name);
-        vmgen_buf_append(buf, "            break;\n        }\n");
+        vmgen_buf_append(buf, "        }\n");
     }
 
     vmgen_buf_appendf(buf,
@@ -244,26 +291,28 @@ static void emit_fnptr_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
             "static int handle_%s(%s_vm_t *vm) {\n",
             instr->name, spec->name);
 
-        if (instr->operand_count == 0) {
-            vmgen_buf_append(buf, "    (void)vm;\n");
-        }
-
+        /* Decode operands */
         for (int j = 0; j < instr->operand_count; j++) {
             vmgen_buf_appendf(buf, "    %s %s = %s;\n",
                               c_type_for_operand(instr->operands[j].type),
                               instr->operands[j].name,
                               read_macro_for(instr->operands[j].type));
         }
-        for (int j = 0; j < instr->operand_count; j++) {
-            vmgen_buf_appendf(buf, "    (void)%s;\n",
-                              instr->operands[j].name);
-        }
 
-        vmgen_buf_appendf(buf,
-            "    /* TODO: implement %s */\n"
-            "    return 0;\n"
-            "}\n\n",
-            instr->name);
+        /* Emit action body */
+        bool has_action = (instr->action && instr->action[0]) ||
+                          (instr->action_c && instr->action_c[0]);
+        bool terminal = action_has_terminal(instr);
+        /* Suppress unused vm warning for handlers that don't reference vm */
+        if ((!has_action && instr->operand_count == 0) || terminal) {
+            vmgen_buf_append(buf, "    (void)vm;\n");
+        }
+        emit_action_body(buf, spec, instr, "    ");
+
+        if (!terminal) {
+            vmgen_buf_append(buf, "    return 0;\n");
+        }
+        vmgen_buf_append(buf, "}\n\n");
     }
 
     /* Dispatch table */

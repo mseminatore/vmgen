@@ -12,12 +12,20 @@
 #include "codegen/gen_strings.h"
 #include "codegen/gen_gc.h"
 #include "codegen/gen_build.h"
+#include "codegen/action_parser.h"
+#include "codegen/action_emit.h"
 #include "spec/model.h"
 #include "spec/parser.h"
 #include "spec/validate.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
+#ifdef _MSC_VER
+#define vmgen_strdup _strdup
+#else
+#define vmgen_strdup strdup
+#endif
 
 #ifdef _WIN32
 #include <direct.h>
@@ -577,4 +585,269 @@ void test_integration(void) {
     remove("test_gen/CMakeLists.txt");
 
     vmgen_spec_free(&spec);
+}
+
+/* Action DSL parser and codegen tests */
+void test_actions(void) {
+    MODULE("Action DSL Parser");
+
+    SUITE("Parse basic pop/push");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("pop b; pop a; push a + b", &action);
+        TESTEX("parse ADD action succeeds", rc == 0);
+        TESTEX("ADD has 3 statements", action.count == 3);
+        TESTEX("stmt 0 is POP", action.stmts[0].type == ACT_POP);
+        TESTEX("stmt 0 ident is 'b'", strcmp(action.stmts[0].ident, "b") == 0);
+        TESTEX("stmt 1 is POP", action.stmts[1].type == ACT_POP);
+        TESTEX("stmt 1 ident is 'a'", strcmp(action.stmts[1].ident, "a") == 0);
+        TESTEX("stmt 2 is PUSH", action.stmts[2].type == ACT_PUSH);
+        TESTEX("stmt 2 has expr", action.stmts[2].expr != NULL);
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Parse operand references");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("push constants[$index]", &action);
+        TESTEX("parse constants ref succeeds", rc == 0);
+        TESTEX("has 1 statement", action.count == 1);
+        TESTEX("stmt is PUSH", action.stmts[0].type == ACT_PUSH);
+        TESTEX("expr is CONST_INDEX", action.stmts[0].expr->type == EXPR_CONST_INDEX);
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Parse peek");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("peek a; push a", &action);
+        TESTEX("parse peek succeeds", rc == 0);
+        TESTEX("has 2 statements", action.count == 2);
+        TESTEX("stmt 0 is PEEK", action.stmts[0].type == ACT_PEEK);
+        TESTEX("stmt 1 is PUSH", action.stmts[1].type == ACT_PUSH);
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Parse jump");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("jump $offset", &action);
+        TESTEX("parse jump succeeds", rc == 0);
+        TESTEX("has 1 statement", action.count == 1);
+        TESTEX("stmt is JUMP", action.stmts[0].type == ACT_JUMP);
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Parse jump_if_zero");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("pop a; jump_if_zero a $offset", &action);
+        TESTEX("parse jump_if_zero succeeds", rc == 0);
+        TESTEX("has 2 statements", action.count == 2);
+        TESTEX("stmt 1 is JUMP_IF_ZERO", action.stmts[1].type == ACT_JUMP_IF_ZERO);
+        TESTEX("stmt 1 ident is 'a'", strcmp(action.stmts[1].ident, "a") == 0);
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Parse halt and return");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("halt", &action);
+        TESTEX("parse halt succeeds", rc == 0);
+        TESTEX("stmt is HALT", action.stmts[0].type == ACT_HALT);
+        vmgen_action_free(&action);
+
+        rc = vmgen_action_parse("return", &action);
+        TESTEX("parse return succeeds", rc == 0);
+        TESTEX("stmt is RETURN", action.stmts[0].type == ACT_RETURN);
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Parse unary expressions");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("pop a; push -a", &action);
+        TESTEX("parse negate succeeds", rc == 0);
+        TESTEX("push expr is UNARY", action.stmts[1].expr->type == EXPR_UNARY);
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Parse comparison operators");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("pop b; pop a; push a == b", &action);
+        TESTEX("parse EQ succeeds", rc == 0);
+        TESTEX("push expr is BINOP", action.stmts[2].expr->type == EXPR_BINOP);
+        vmgen_action_free(&action);
+
+        rc = vmgen_action_parse("pop b; pop a; push a < b", &action);
+        TESTEX("parse LT succeeds", rc == 0);
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Parse errors");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("badkeyword x", &action);
+        TESTEX("unknown keyword fails", rc == -1);
+        TESTEX("error message set", action.error[0] != '\0');
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Stack effect calculation");
+    {
+        vmgen_action_t action;
+        vmgen_action_parse("pop b; pop a; push a + b", &action);
+        TESTEX("ADD effect is -1", vmgen_action_stack_effect(&action) == -1);
+        vmgen_action_free(&action);
+
+        vmgen_action_parse("push constants[$index]", &action);
+        TESTEX("PUSH_CONST effect is +1", vmgen_action_stack_effect(&action) == 1);
+        vmgen_action_free(&action);
+
+        vmgen_action_parse("pop _", &action);
+        TESTEX("POP effect is -1", vmgen_action_stack_effect(&action) == -1);
+        vmgen_action_free(&action);
+
+        vmgen_action_parse("peek a; push a", &action);
+        TESTEX("DUP effect is +1", vmgen_action_stack_effect(&action) == 1);
+        vmgen_action_free(&action);
+    }
+
+    SUITE("Empty action");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("", &action);
+        TESTEX("empty parses ok", rc == 0);
+        TESTEX("empty has 0 stmts", action.count == 0);
+        vmgen_action_free(&action);
+    }
+
+    /* --- Action codegen --- */
+    MODULE("Action Code Emission");
+
+    SUITE("Emit DSL action to C");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "test");
+        spec.stack.value_type = VMGEN_VALUE_INT64;
+
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+        snprintf(instr.name, VMGEN_MAX_NAME, "ADD");
+
+        vmgen_action_t action;
+        vmgen_action_parse("pop b; pop a; push a + b", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit(&buf, "    ", &spec, &instr, &action);
+
+        TESTEX("emits vm_pop for b", strstr(buf.data, "test_vm_pop(vm)") != NULL);
+        TESTEX("emits vm_push", strstr(buf.data, "test_vm_push(vm,") != NULL);
+        TESTEX("emits a + b", strstr(buf.data, "(a + b)") != NULL);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Emit inline C");
+    {
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit_inline_c(&buf, "    ", "int x = 42;\nprintf(\"%d\", x);");
+        TESTEX("inline C has first line", strstr(buf.data, "    int x = 42;\n") != NULL);
+        TESTEX("inline C has second line", strstr(buf.data, "    printf(\"%d\", x);") != NULL);
+        vmgen_buf_free(&buf);
+    }
+
+    SUITE("Emit constants reference");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "test");
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+
+        vmgen_action_t action;
+        vmgen_action_parse("push constants[$index]", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit(&buf, "    ", &spec, &instr, &action);
+        TESTEX("emits constants.values", strstr(buf.data, "vm->constants.values[index]") != NULL);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
+
+    /* --- Generated code verification --- */
+    MODULE("Action Integration in Generated Code");
+
+    SUITE("Generated vm.c with DSL actions");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        /* Add action to ADD instruction */
+        spec.instructions[1].action = vmgen_strdup("pop b; pop a; push a + b");
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm with action succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c has vm_pop for ADD", strstr(content, "testvm_vm_pop(vm)") != NULL);
+            TESTEX("vm.c has vm_push for ADD", strstr(content, "testvm_vm_push(vm,") != NULL);
+            TESTEX("vm.c still has TODO for PUSH_CONST", strstr(content, "TODO: implement PUSH_CONST") != NULL);
+            TESTEX("vm.c no TODO for ADD", strstr(content, "TODO: implement ADD") == NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Generated vm.c with inline C action");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.instructions[1].action_c = vmgen_strdup("int64_t b = testvm_vm_pop(vm);\nint64_t a = testvm_vm_pop(vm);\ntestvm_vm_push(vm, a + b);");
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm with inline C succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c has inline C code", strstr(content, "testvm_vm_push(vm, a + b)") != NULL);
+            TESTEX("vm.c no TODO for ADD", strstr(content, "TODO: implement ADD") == NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Parse minimal.yaml with actions");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        int rc = vmgen_parse_spec("specs/minimal.yaml", &spec);
+        TESTEX("parse minimal.yaml succeeds", rc == 0);
+        TESTEX("ADD has action", spec.instructions[2].action != NULL);
+        if (spec.instructions[2].action) {
+            TESTEX("ADD action is pop/push", strstr(spec.instructions[2].action, "pop") != NULL);
+        }
+        TESTEX("ADD stack_effect_set", spec.instructions[2].stack_effect_set == true);
+        TESTEX("ADD stack_effect is -1", spec.instructions[2].stack_effect == -1);
+        vmgen_spec_free(&spec);
+    }
 }

@@ -5,6 +5,12 @@
 #include <ctype.h>
 #include <yaml.h>
 
+#ifdef _MSC_VER
+#define vmgen_strdup _strdup
+#else
+#define vmgen_strdup strdup
+#endif
+
 /* ---- helpers ---- */
 
 static void safe_copy(char *dst, const char *src, size_t max) {
@@ -384,6 +390,27 @@ static void parse_instruction(parse_ctx_t *ctx, vmgen_instr_t *instr) {
             } else {
                 yaml_event_delete(&v);
             }
+        } else if (str_eq(key, "action")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!expect_scalar(ctx, &v)) return;
+            free(instr->action);
+            instr->action = vmgen_strdup(event_scalar(&v));
+            yaml_event_delete(&v);
+        } else if (str_eq(key, "action_c")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!expect_scalar(ctx, &v)) return;
+            free(instr->action_c);
+            instr->action_c = vmgen_strdup(event_scalar(&v));
+            yaml_event_delete(&v);
+        } else if (str_eq(key, "stack_effect")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!expect_scalar(ctx, &v)) return;
+            instr->stack_effect = atoi(event_scalar(&v));
+            instr->stack_effect_set = true;
+            yaml_event_delete(&v);
         } else {
             yaml_event_delete(&e);
             skip_value(ctx);

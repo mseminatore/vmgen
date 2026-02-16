@@ -30,6 +30,8 @@ add_executable(vmgen
     src/codegen/emit.c
     src/codegen/gen_opcodes.c
     src/codegen/gen_vm.c
+    src/codegen/action_parser.c
+    src/codegen/action_emit.c
     src/codegen/gen_assembler.c
     src/codegen/gen_disasm.c
     src/codegen/gen_gc.c
@@ -62,6 +64,8 @@ add_executable(vmgen_tests
     src/codegen/emit.c
     src/codegen/gen_opcodes.c
     src/codegen/gen_vm.c
+    src/codegen/action_parser.c
+    src/codegen/action_emit.c
     src/codegen/gen_assembler.c
     src/codegen/gen_disasm.c
     src/codegen/gen_gc.c

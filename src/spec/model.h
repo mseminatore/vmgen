@@ -13,6 +13,7 @@
 #define VMGEN_MAX_OPERANDS    4
 #define VMGEN_MAX_CONSTANTS  16
 #define VMGEN_MAX_DESC      128
+#define VMGEN_MAX_ACTION   1024
 
 /* Operand types */
 typedef enum {
@@ -36,6 +37,10 @@ typedef struct {
     char description[VMGEN_MAX_DESC];
     vmgen_operand_t operands[VMGEN_MAX_OPERANDS];
     int operand_count;
+    char *action;                       /* stack-effect DSL string (heap, may be NULL) */
+    char *action_c;                     /* inline C snippet (heap, may be NULL) */
+    int stack_effect;                   /* declared net stack effect */
+    bool stack_effect_set;              /* whether stack_effect was explicitly declared */
 } vmgen_instr_t;
 
 /* Stack configuration */

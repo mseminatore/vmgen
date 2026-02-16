@@ -1,5 +1,6 @@
 #include "model.h"
 #include <string.h>
+#include <stdlib.h>
 
 void vmgen_spec_init(vmgen_spec_t *spec) {
     memset(spec, 0, sizeof(*spec));
@@ -10,7 +11,9 @@ void vmgen_spec_init(vmgen_spec_t *spec) {
 }
 
 void vmgen_spec_free(vmgen_spec_t *spec) {
-    /* Currently all data is inline; nothing to free.
-     * This function exists for future heap allocations. */
-    (void)spec;
+    for (int i = 0; i < spec->instruction_count; i++) {
+        free(spec->instructions[i].action);
+        free(spec->instructions[i].action_c);
+    }
+    memset(spec, 0, sizeof(*spec));
 }

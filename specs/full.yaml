@@ -33,54 +33,73 @@ vm:
     - name: PUSH_CONST
       operands: [{ name: index, type: uint16 }]
       description: "Push constant at index onto stack"
+      action: "push constants[$index]"
 
     - name: POP
       operands: []
       description: "Pop top of stack"
+      action: "pop _"
 
     - name: ADD
       operands: []
       description: "Pop two values, push their sum"
+      action: "pop b; pop a; push a + b"
+      stack_effect: -1
 
     - name: SUB
       operands: []
       description: "Pop two values, push their difference"
+      action: "pop b; pop a; push a - b"
+      stack_effect: -1
 
     - name: MUL
       operands: []
       description: "Pop two values, push their product"
+      action: "pop b; pop a; push a * b"
+      stack_effect: -1
 
     - name: DIV
       operands: []
       description: "Pop two values, push their quotient"
+      action: "pop b; pop a; push a / b"
+      stack_effect: -1
 
     - name: EQ
       operands: []
       description: "Pop two values, push true if equal"
+      action: "pop b; pop a; push a == b"
+      stack_effect: -1
 
     - name: LT
       operands: []
       description: "Pop two values, push true if a < b"
+      action: "pop b; pop a; push a < b"
+      stack_effect: -1
 
     - name: JUMP
       operands: [{ name: offset, type: int16 }]
       description: "Unconditional jump by offset"
+      action: "jump $offset"
 
     - name: JUMP_IF_FALSE
       operands: [{ name: offset, type: int16 }]
       description: "Jump by offset if top of stack is false"
+      action: "pop a; jump_if_zero a $offset"
 
     - name: CALL
       operands: [{ name: func_index, type: uint16 }, { name: arity, type: uint8 }]
       description: "Call function at index with arity arguments"
+      action: "call $func_index $arity"
 
     - name: RETURN
       operands: []
       description: "Return from current function"
+      action: "return"
 
     - name: HALT
       operands: []
       description: "Stop execution"
+      action: "halt"
 
   constants:
     - int64

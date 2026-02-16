@@ -26,22 +26,30 @@ vm:
     - name: PUSH_CONST
       operands: [{ name: index, type: uint16 }]
       description: "Push constant at index onto stack"
+      action: "push constants[$index]"
 
     - name: POP
       operands: []
       description: "Pop top of stack"
+      action: "pop _"
+      stack_effect: -1
 
     - name: ADD
       operands: []
       description: "Pop two values, push their sum"
+      action: "pop b; pop a; push a + b"
+      stack_effect: -1
 
     - name: SUB
       operands: []
       description: "Pop two values, push their difference"
+      action: "pop b; pop a; push a - b"
+      stack_effect: -1
 
     - name: HALT
       operands: []
       description: "Stop execution"
+      action: "halt"
 
   constants:
     - int64
