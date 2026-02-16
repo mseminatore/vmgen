@@ -1,0 +1,47 @@
+vm:
+  name: "minimal"
+  version: "1.0"
+
+  stack:
+    type: "fixed"
+    max_depth: 256
+    value_type: "int64"
+
+  types:
+    - int64
+
+  features:
+    interned_strings: false
+    garbage_collection:
+      enabled: false
+    closures: false
+    modules:
+      enabled: false
+    coroutines: false
+    debug_tracing: false
+
+  dispatch: "switch"
+
+  instructions:
+    - name: PUSH_CONST
+      operands: [{ name: index, type: uint16 }]
+      description: "Push constant at index onto stack"
+
+    - name: POP
+      operands: []
+      description: "Pop top of stack"
+
+    - name: ADD
+      operands: []
+      description: "Pop two values, push their sum"
+
+    - name: SUB
+      operands: []
+      description: "Pop two values, push their difference"
+
+    - name: HALT
+      operands: []
+      description: "Stop execution"
+
+  constants:
+    - int64

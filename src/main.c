@@ -1,0 +1,88 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "spec/model.h"
+#include "spec/parser.h"
+#include "spec/validate.h"
+#include "codegen/emit.h"
+#include "codegen/gen_opcodes.h"
+#include "codegen/gen_vm.h"
+#include "codegen/gen_assembler.h"
+#include "codegen/gen_disasm.h"
+#include "codegen/gen_gc.h"
+#include "codegen/gen_strings.h"
+#include "codegen/gen_closures.h"
+#include "codegen/gen_modules.h"
+#include "codegen/gen_fibers.h"
+#include "codegen/gen_build.h"
+
+static void print_usage(const char *progname) {
+    fprintf(stderr, "Usage: %s <spec.yaml> -o <output_dir>\n", progname);
+    fprintf(stderr, "\nOptions:\n");
+    fprintf(stderr, "  -o <dir>    Output directory for generated C code\n");
+    fprintf(stderr, "  -h          Show this help message\n");
+}
+
+int main(int argc, char *argv[]) {
+    const char *spec_path = NULL;
+    const char *output_dir = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (strcmp(argv[i], "-o") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: -o requires an argument\n");
+                return 1;
+            }
+            output_dir = argv[++i];
+        } else if (argv[i][0] != '-') {
+            spec_path = argv[i];
+        } else {
+            fprintf(stderr, "Error: unknown option '%s'\n", argv[i]);
+            return 1;
+        }
+    }
+
+    if (!spec_path) {
+        fprintf(stderr, "Error: no spec file specified\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    if (!output_dir) {
+        fprintf(stderr, "Error: no output directory specified (-o)\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    /* Parse the spec */
+    vmgen_spec_t spec;
+    vmgen_spec_init(&spec);
+
+    int rc = vmgen_parse_spec(spec_path, &spec);
+    if (rc != 0) {
+        fprintf(stderr, "Error: failed to parse spec '%s'\n", spec_path);
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    /* Validate the spec */
+    rc = vmgen_validate_spec(&spec);
+    if (rc != 0) {
+        fprintf(stderr, "Error: spec validation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    printf("vmgen: generating VM '%s' v%s -> %s/\n",
+           spec.name, spec.version, output_dir);
+
+    /* TODO: Code generation phases will be called here */
+    (void)output_dir;
+
+    vmgen_spec_free(&spec);
+    printf("vmgen: done\n");
+    return 0;
+}
