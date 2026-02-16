@@ -87,6 +87,13 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    rc = vmgen_gen_vm(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: VM generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
     vmgen_spec_free(&spec);
     printf("vmgen: done\n");
     return 0;

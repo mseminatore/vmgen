@@ -2,6 +2,7 @@
 #include "util/buffer.h"
 #include "codegen/emit.h"
 #include "codegen/gen_opcodes.h"
+#include "codegen/gen_vm.h"
 #include "spec/model.h"
 #include <stdio.h>
 #include <string.h>
@@ -154,8 +155,63 @@ void test_codegen(void) {
         free(content);
     }
 
+    /* --- VM header/source generation --- */
+    MODULE("VM Generation");
+
+    SUITE("Generate vm.h and vm.c (switch dispatch)");
+    rc = vmgen_gen_vm(&ospec, "test_output");
+    TESTEX("gen_vm succeeds", rc == 0);
+
+    content = read_file("test_output/vm.h");
+    TESTEX("vm.h was created", content != NULL);
+
+    if (content) {
+        TESTEX("vm.h has guard", strstr(content, "#ifndef TESTVM_VM_H") != NULL);
+        TESTEX("vm.h has value type", strstr(content, "testvm_value_t") != NULL);
+        TESTEX("vm.h has vm struct", strstr(content, "testvm_vm_t") != NULL);
+        TESTEX("vm.h has vm_init", strstr(content, "testvm_vm_init") != NULL);
+        TESTEX("vm.h has vm_run", strstr(content, "testvm_vm_run") != NULL);
+        TESTEX("vm.h has vm_push", strstr(content, "testvm_vm_push") != NULL);
+        TESTEX("vm.h has vm_pop", strstr(content, "testvm_vm_pop") != NULL);
+        TESTEX("vm.h has stack array", strstr(content, "stack[") != NULL);
+        TESTEX("vm.h includes opcodes.h", strstr(content, "#include \"opcodes.h\"") != NULL);
+        free(content);
+    }
+
+    content = read_file("test_output/vm.c");
+    TESTEX("vm.c was created", content != NULL);
+
+    if (content) {
+        TESTEX("vm.c has switch dispatch", strstr(content, "switch (opcode)") != NULL);
+        TESTEX("vm.c has PUSH_CONST case", strstr(content, "TESTVM_OP_PUSH_CONST") != NULL);
+        TESTEX("vm.c has HALT case", strstr(content, "TESTVM_OP_HALT") != NULL);
+        TESTEX("vm.c has push function", strstr(content, "testvm_vm_push") != NULL);
+        TESTEX("vm.c has pop function", strstr(content, "testvm_vm_pop") != NULL);
+        TESTEX("vm.c has stack overflow check", strstr(content, "stack overflow") != NULL);
+        TESTEX("vm.c has stack underflow check", strstr(content, "stack underflow") != NULL);
+        TESTEX("vm.c has READ_UINT16 macro", strstr(content, "READ_UINT16") != NULL);
+        free(content);
+    }
+
+    /* --- fnptr dispatch --- */
+    SUITE("Generate vm.c (fnptr dispatch)");
+    ospec.dispatch = VMGEN_DISPATCH_FNPTR;
+    rc = vmgen_gen_vm(&ospec, "test_output");
+    TESTEX("gen_vm fnptr succeeds", rc == 0);
+
+    content = read_file("test_output/vm.c");
+    TESTEX("vm.c fnptr was created", content != NULL);
+    if (content) {
+        TESTEX("vm.c has dispatch table", strstr(content, "testvm_dispatch_table") != NULL);
+        TESTEX("vm.c has handler functions", strstr(content, "handle_PUSH_CONST") != NULL);
+        TESTEX("vm.c has handler type", strstr(content, "testvm_handler_t") != NULL);
+        free(content);
+    }
+
     /* Cleanup */
     remove("test_output/opcodes.h");
+    remove("test_output/vm.h");
+    remove("test_output/vm.c");
 
     vmgen_spec_free(&ospec);
 }
