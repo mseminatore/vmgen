@@ -79,8 +79,13 @@ int main(int argc, char *argv[]) {
     printf("vmgen: generating VM '%s' v%s -> %s/\n",
            spec.name, spec.version, output_dir);
 
-    /* TODO: Code generation phases will be called here */
-    (void)output_dir;
+    /* Code generation */
+    rc = vmgen_gen_opcodes(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: opcode generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
 
     vmgen_spec_free(&spec);
     printf("vmgen: done\n");

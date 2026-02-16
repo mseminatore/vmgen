@@ -1,7 +1,58 @@
 #include "test.h"
 #include "util/buffer.h"
 #include "codegen/emit.h"
+#include "codegen/gen_opcodes.h"
 #include "spec/model.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#define MKDIR(d) _mkdir(d)
+#else
+#include <sys/stat.h>
+#define MKDIR(d) mkdir(d, 0755)
+#endif
+
+/* Helper: read a file into a malloc'd string */
+static char *read_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *data = (char *)malloc((size_t)len + 1);
+    if (!data) { fclose(f); return NULL; }
+    fread(data, 1, (size_t)len, f);
+    data[len] = '\0';
+    fclose(f);
+    return data;
+}
+
+/* Helper: build a test spec with a few instructions */
+static void make_test_spec(vmgen_spec_t *spec) {
+    vmgen_spec_init(spec);
+    snprintf(spec->name, sizeof(spec->name), "testvm");
+    snprintf(spec->version, sizeof(spec->version), "1.0");
+    spec->type_flags = VMGEN_TYPE_INT64;
+
+    /* PUSH_CONST index:uint16 */
+    snprintf(spec->instructions[0].name, VMGEN_MAX_NAME, "PUSH_CONST");
+    spec->instructions[0].operand_count = 1;
+    snprintf(spec->instructions[0].operands[0].name, VMGEN_MAX_NAME, "index");
+    spec->instructions[0].operands[0].type = VMGEN_OPERAND_UINT16;
+
+    /* ADD (no operands) */
+    snprintf(spec->instructions[1].name, VMGEN_MAX_NAME, "ADD");
+    spec->instructions[1].operand_count = 0;
+
+    /* HALT (no operands) */
+    snprintf(spec->instructions[2].name, VMGEN_MAX_NAME, "HALT");
+    spec->instructions[2].operand_count = 0;
+
+    spec->instruction_count = 3;
+}
 
 void test_codegen(void) {
     MODULE("Code Generation Utilities");
@@ -62,4 +113,49 @@ void test_codegen(void) {
     vmgen_buf_free(&buf);
 
     vmgen_spec_free(&spec);
+
+    /* --- Opcode generation --- */
+    MODULE("Opcode Generation");
+
+    SUITE("Generate opcodes.h");
+
+    vmgen_spec_t ospec;
+    make_test_spec(&ospec);
+
+    MKDIR("test_output");
+    int rc = vmgen_gen_opcodes(&ospec, "test_output");
+    TESTEX("gen_opcodes succeeds", rc == 0);
+
+    char *content = read_file("test_output/opcodes.h");
+    TESTEX("opcodes.h was created", content != NULL);
+
+    if (content) {
+        SUITE("Opcode enum");
+        TESTEX("has include guard", strstr(content, "#ifndef TESTVM_OPCODES_H") != NULL);
+        TESTEX("has opcode enum", strstr(content, "TESTVM_OP_PUSH_CONST = 0") != NULL);
+        TESTEX("has ADD opcode", strstr(content, "TESTVM_OP_ADD = 1") != NULL);
+        TESTEX("has HALT opcode", strstr(content, "TESTVM_OP_HALT = 2") != NULL);
+        TESTEX("has OP_COUNT", strstr(content, "TESTVM_OP_COUNT = 3") != NULL);
+
+        SUITE("Opcode name table");
+        TESTEX("has name table", strstr(content, "testvm_opcode_names") != NULL);
+        TESTEX("has PUSH_CONST name", strstr(content, "\"PUSH_CONST\"") != NULL);
+
+        SUITE("Operand count table");
+        TESTEX("has operand count table", strstr(content, "testvm_operand_counts") != NULL);
+
+        SUITE("Instruction size table");
+        TESTEX("has size table", strstr(content, "testvm_instruction_sizes") != NULL);
+        /* PUSH_CONST = 1 opcode + 2 uint16 = 3 bytes */
+        TESTEX("PUSH_CONST size is 3", strstr(content, "3,  /* PUSH_CONST */") != NULL);
+        /* ADD = 1 opcode byte */
+        TESTEX("ADD size is 1", strstr(content, "1,  /* ADD */") != NULL);
+
+        free(content);
+    }
+
+    /* Cleanup */
+    remove("test_output/opcodes.h");
+
+    vmgen_spec_free(&ospec);
 }
