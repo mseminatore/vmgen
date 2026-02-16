@@ -126,6 +126,16 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "} %s_const_pool_t;\n\n",
         upper, spec->name, upper, spec->name);
 
+    /* Call frame */
+    vmgen_buf_appendf(&buf,
+        "#define %s_MAX_FRAMES 64\n\n"
+        "typedef struct {\n"
+        "    size_t return_ip;\n"
+        "    int base_sp;\n"
+        "    uint16_t func_index;\n"
+        "} %s_frame_t;\n\n",
+        upper, spec->name);
+
     /* VM state struct */
     vmgen_buf_appendf(&buf,
         "typedef struct {\n"
@@ -135,8 +145,11 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "    %s_value_t stack[%d];\n"
         "    int sp;\n"
         "    int running;\n"
-        "    %s_const_pool_t constants;\n",
-        spec->name, spec->stack.max_depth, spec->name);
+        "    %s_const_pool_t constants;\n"
+        "    %s_frame_t frames[%s_MAX_FRAMES];\n"
+        "    int frame_count;\n",
+        spec->name, spec->stack.max_depth,
+        spec->name, spec->name, upper);
 
     if (spec->features.debug_tracing) {
         vmgen_buf_append(&buf, "    int trace_enabled;\n");
