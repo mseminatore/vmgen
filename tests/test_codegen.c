@@ -1340,4 +1340,107 @@ void test_actions(void) {
         remove("test_output/vm.c");
         vmgen_spec_free(&spec);
     }
+
+    /* --- Reference Counting GC --- */
+    MODULE("Reference Counting GC");
+
+    SUITE("Refcount gc.h has retain/release instead of mark/sweep");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_REFCOUNT;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_gc(&spec, "test_output");
+        TESTEX("gen_gc succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/gc.h");
+        TESTEX("gc.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("has refcount field", strstr(hdr, "refcount") != NULL);
+            TESTEX("has gc_retain", strstr(hdr, "gc_retain") != NULL);
+            TESTEX("has gc_release", strstr(hdr, "gc_release") != NULL);
+            TESTEX("no marked field", strstr(hdr, "int marked") == NULL);
+            TESTEX("no gc_collect", strstr(hdr, "gc_collect") == NULL);
+            TESTEX("no gc_inhibit", strstr(hdr, "gc_inhibit") == NULL);
+            TESTEX("no mark_roots", strstr(hdr, "mark_roots") == NULL);
+            free(hdr);
+        }
+
+        char *src = read_file("test_output/gc.c");
+        TESTEX("gc.c created", src != NULL);
+        if (src) {
+            TESTEX("gc.c has gc_retain impl", strstr(src, "gc_retain") != NULL);
+            TESTEX("gc.c has gc_release impl", strstr(src, "gc_release") != NULL);
+            TESTEX("gc.c has refcount = 1", strstr(src, "refcount = 1") != NULL);
+            TESTEX("gc.c has refcount--", strstr(src, "refcount--") != NULL);
+            TESTEX("no gc_collect impl", strstr(src, "gc_collect") == NULL);
+            free(src);
+        }
+
+        remove("test_output/gc.h");
+        remove("test_output/gc.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Refcount gc.h has closure types when closures enabled");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_REFCOUNT;
+        spec.features.closures = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_gc(&spec, "test_output");
+        TESTEX("gen_gc succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/gc.h");
+        TESTEX("gc.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("has OBJ_CLOSURE", strstr(hdr, "OBJ_CLOSURE") != NULL);
+            TESTEX("has OBJ_UPVALUE", strstr(hdr, "OBJ_UPVALUE") != NULL);
+            free(hdr);
+        }
+
+        remove("test_output/gc.h");
+        remove("test_output/gc.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Refcount VM has no gc_inhibit/gc_set_roots");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_REFCOUNT;
+        spec.dispatch = VMGEN_DISPATCH_SWITCH;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("no gc_inhibit", strstr(content, "gc_inhibit") == NULL);
+            TESTEX("no gc_allow", strstr(content, "gc_allow") == NULL);
+            TESTEX("no gc_set_roots", strstr(content, "gc_set_roots") == NULL);
+            TESTEX("no mark_roots", strstr(content, "mark_roots") == NULL);
+            free(content);
+        }
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("still has gc.h include", strstr(hdr, "gc.h") != NULL);
+            TESTEX("still has gc pointer", strstr(hdr, "gc_t *gc") != NULL);
+            free(hdr);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
 }

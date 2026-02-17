@@ -285,11 +285,11 @@ static void emit_switch_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
         }
 
         /* Emit action body */
-        if (spec->features.gc_enabled) {
+        if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
             vmgen_buf_appendf(buf, "            if (vm->gc) %s_gc_inhibit(vm->gc);\n", spec->name);
         }
         emit_action_body(buf, spec, instr, "            ");
-        if (spec->features.gc_enabled && !action_has_terminal(instr)) {
+        if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP && !action_has_terminal(instr)) {
             vmgen_buf_appendf(buf, "            if (vm->gc) %s_gc_allow(vm->gc);\n", spec->name);
         }
         if (!action_has_terminal(instr)) {
@@ -347,11 +347,11 @@ static void emit_threaded_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
 
         /* GC inhibit + action body + GC allow */
         bool terminal = action_has_terminal(instr) != 0;
-        if (spec->features.gc_enabled) {
+        if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
             vmgen_buf_appendf(buf, "        if (vm->gc) %s_gc_inhibit(vm->gc);\n", spec->name);
         }
         emit_action_body(buf, spec, instr, "        ");
-        if (spec->features.gc_enabled && !terminal) {
+        if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP && !terminal) {
             vmgen_buf_appendf(buf, "        if (vm->gc) %s_gc_allow(vm->gc);\n", spec->name);
         }
 
@@ -395,11 +395,11 @@ static void emit_fnptr_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
         if (!uses_vm) {
             vmgen_buf_append(buf, "    (void)vm;\n");
         }
-        if (spec->features.gc_enabled) {
+        if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
             vmgen_buf_appendf(buf, "    if (vm->gc) %s_gc_inhibit(vm->gc);\n", spec->name);
         }
         emit_action_body(buf, spec, instr, "    ");
-        if (spec->features.gc_enabled && !terminal) {
+        if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP && !terminal) {
             vmgen_buf_appendf(buf, "    if (vm->gc) %s_gc_allow(vm->gc);\n", spec->name);
         }
 
@@ -524,8 +524,8 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         "}\n\n",
         spec->name, spec->name, spec->name, upper);
 
-    /* GC root scanning function (when GC enabled) */
-    if (spec->features.gc_enabled) {
+    /* GC root scanning function (mark-sweep only) */
+    if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
         vmgen_buf_appendf(&buf,
             "static void %s_vm_mark_roots(void *data) {\n"
             "    %s_vm_t *vm = (%s_vm_t *)data;\n",
@@ -573,7 +573,7 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         "    vm->running = 1;\n",
         spec->name, spec->name);
 
-    if (spec->features.gc_enabled) {
+    if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
         vmgen_buf_appendf(&buf,
             "    if (vm->gc) {\n"
             "        %s_gc_set_roots(vm->gc, %s_vm_mark_roots, vm);\n"

@@ -75,7 +75,7 @@ int vmgen_gen_strings(const vmgen_spec_t *spec, const char *output_dir) {
         spec->name, spec->name,
         spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name);
-    if (spec->features.gc_enabled) {
+    if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
         vmgen_buf_appendf(&buf,
             "void %s_string_table_mark(%s_string_table_t *table);\n",
             spec->name, spec->name);
@@ -201,8 +201,8 @@ int vmgen_gen_strings(const vmgen_spec_t *spec, const char *output_dir) {
         "}\n",
         upper);
 
-    /* mark all strings (when GC enabled) */
-    if (spec->features.gc_enabled) {
+    /* mark all strings (mark-sweep GC only) */
+    if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
         vmgen_buf_appendf(&buf,
             "\nvoid %s_string_table_mark(%s_string_table_t *table) {\n"
             "    for (int i = 0; i < %s_STRING_TABLE_SIZE; i++) {\n"

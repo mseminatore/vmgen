@@ -84,7 +84,7 @@ int vmgen_gen_closures(const vmgen_spec_t *spec, const char *output_dir) {
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name);
-    if (spec->features.gc_enabled) {
+    if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
         vmgen_buf_appendf(&buf,
             "void %s_closure_mark(%s_closure_t *closure);\n",
             spec->name, spec->name);
@@ -194,8 +194,8 @@ int vmgen_gen_closures(const vmgen_spec_t *spec, const char *output_dir) {
         "}\n",
         spec->name, spec->name);
 
-    /* mark closure + upvalues (when GC enabled) */
-    if (spec->features.gc_enabled) {
+    /* mark closure + upvalues (mark-sweep GC only) */
+    if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
         vmgen_buf_appendf(&buf,
             "\nvoid %s_closure_mark(%s_closure_t *closure) {\n"
             "    %s_gc_mark_object((%s_obj_t *)closure);\n"
