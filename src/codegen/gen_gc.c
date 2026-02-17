@@ -40,9 +40,16 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
     vmgen_buf_appendf(&buf,
         "typedef enum {\n"
         "    %s_OBJ_STRING,\n"
-        "    %s_OBJ_GENERIC,\n"
-        "} %s_obj_type_t;\n\n",
-        upper, upper, spec->name);
+        "    %s_OBJ_GENERIC,\n",
+        upper, upper);
+    if (spec->features.closures) {
+        vmgen_buf_appendf(&buf,
+            "    %s_OBJ_CLOSURE,\n"
+            "    %s_OBJ_UPVALUE,\n",
+            upper, upper);
+    }
+    vmgen_buf_appendf(&buf,
+        "} %s_obj_type_t;\n\n", spec->name);
 
     /* Object header */
     vmgen_buf_appendf(&buf,

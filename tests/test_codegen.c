@@ -1047,6 +1047,173 @@ void test_actions(void) {
         vmgen_spec_free(&spec);
     }
 
+    /* --- GC integration: strings --- */
+    MODULE("GC Integration - Strings");
+
+    SUITE("GC-enabled strings have obj header + gc_alloc");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_MARK_SWEEP;
+        spec.features.interned_strings = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_strings(&spec, "test_output");
+        TESTEX("gen_strings succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/strings.h");
+        TESTEX("strings.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("strings.h includes gc.h", strstr(hdr, "#include \"gc.h\"") != NULL);
+            TESTEX("strings.h has obj field", strstr(hdr, "obj_t obj") != NULL);
+            TESTEX("strings.h has gc pointer in table", strstr(hdr, "gc_t *gc") != NULL);
+            TESTEX("strings.h has string_table_mark", strstr(hdr, "string_table_mark") != NULL);
+            free(hdr);
+        }
+
+        char *impl = read_file("test_output/strings.c");
+        TESTEX("strings.c created", impl != NULL);
+        if (impl) {
+            TESTEX("strings.c uses gc_alloc", strstr(impl, "gc_alloc") != NULL);
+            TESTEX("strings.c has mark function", strstr(impl, "string_table_mark") != NULL);
+            TESTEX("strings.c marks objects", strstr(impl, "gc_mark_object") != NULL);
+            free(impl);
+        }
+
+        remove("test_output/strings.h");
+        remove("test_output/strings.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("No-GC strings use plain malloc");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = false;
+        spec.features.interned_strings = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_strings(&spec, "test_output");
+        TESTEX("gen_strings succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/strings.h");
+        TESTEX("strings.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("no gc.h include", strstr(hdr, "gc.h") == NULL);
+            TESTEX("no obj field", strstr(hdr, "obj_t obj") == NULL);
+            free(hdr);
+        }
+
+        char *impl = read_file("test_output/strings.c");
+        TESTEX("strings.c created", impl != NULL);
+        if (impl) {
+            TESTEX("uses malloc not gc_alloc", strstr(impl, "gc_alloc") == NULL);
+            TESTEX("no mark function", strstr(impl, "string_table_mark") == NULL);
+            free(impl);
+        }
+
+        remove("test_output/strings.h");
+        remove("test_output/strings.c");
+        vmgen_spec_free(&spec);
+    }
+
+    /* --- GC integration: closures --- */
+    MODULE("GC Integration - Closures");
+
+    SUITE("GC-enabled closures have obj header + gc_alloc");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_MARK_SWEEP;
+        spec.features.closures = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_closures(&spec, "test_output");
+        TESTEX("gen_closures succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/closures.h");
+        TESTEX("closures.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("closures.h includes gc.h", strstr(hdr, "#include \"gc.h\"") != NULL);
+            TESTEX("upvalue_t has obj field", strstr(hdr, "obj_t obj") != NULL);
+            TESTEX("closures.h has closure_mark", strstr(hdr, "closure_mark") != NULL);
+            TESTEX("init_closure takes gc param", strstr(hdr, "gc_t *gc") != NULL);
+            free(hdr);
+        }
+
+        char *impl = read_file("test_output/closures.c");
+        TESTEX("closures.c created", impl != NULL);
+        if (impl) {
+            TESTEX("closures.c uses gc_alloc", strstr(impl, "gc_alloc") != NULL);
+            TESTEX("closures.c uses OBJ_UPVALUE", strstr(impl, "OBJ_UPVALUE") != NULL);
+            TESTEX("closures.c has closure_mark", strstr(impl, "closure_mark") != NULL);
+            free(impl);
+        }
+
+        remove("test_output/closures.h");
+        remove("test_output/closures.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("No-GC closures use plain malloc");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = false;
+        spec.features.closures = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_closures(&spec, "test_output");
+        TESTEX("gen_closures succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/closures.h");
+        TESTEX("closures.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("no gc.h include", strstr(hdr, "gc.h") == NULL);
+            TESTEX("no obj field", strstr(hdr, "obj_t obj") == NULL);
+            free(hdr);
+        }
+
+        char *impl = read_file("test_output/closures.c");
+        TESTEX("closures.c created", impl != NULL);
+        if (impl) {
+            TESTEX("uses calloc not gc_alloc", strstr(impl, "gc_alloc") == NULL);
+            TESTEX("no closure_mark", strstr(impl, "closure_mark") == NULL);
+            free(impl);
+        }
+
+        remove("test_output/closures.h");
+        remove("test_output/closures.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("GC obj enum has closure types");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_MARK_SWEEP;
+        spec.features.closures = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_gc(&spec, "test_output");
+        TESTEX("gen_gc succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/gc.h");
+        TESTEX("gc.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("gc.h has OBJ_CLOSURE", strstr(hdr, "OBJ_CLOSURE") != NULL);
+            TESTEX("gc.h has OBJ_UPVALUE", strstr(hdr, "OBJ_UPVALUE") != NULL);
+            free(hdr);
+        }
+
+        remove("test_output/gc.h");
+        remove("test_output/gc.c");
+        vmgen_spec_free(&spec);
+    }
+
     /* --- Threaded dispatch --- */
     MODULE("Threaded Dispatch");
 

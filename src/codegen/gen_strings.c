@@ -34,31 +34,52 @@ int vmgen_gen_strings(const vmgen_spec_t *spec, const char *output_dir) {
 
     vmgen_buf_append(&buf,
         "#include <stdint.h>\n"
-        "#include <stddef.h>\n\n");
+        "#include <stddef.h>\n");
+    if (spec->features.gc_enabled) {
+        vmgen_buf_append(&buf, "#include \"gc.h\"\n");
+    }
+    vmgen_buf_appendc(&buf, '\n');
 
+    /* String struct (with optional GC object header) */
+    vmgen_buf_appendf(&buf, "typedef struct %s_string {\n", spec->name);
+    if (spec->features.gc_enabled) {
+        vmgen_buf_appendf(&buf, "    %s_obj_t obj;\n", spec->name);
+    }
     vmgen_buf_appendf(&buf,
-        "#define %s_STRING_TABLE_SIZE 256\n\n"
-        "typedef struct %s_string {\n"
         "    char *data;\n"
         "    size_t len;\n"
         "    uint32_t hash;\n"
         "    struct %s_string *next;\n"
-        "} %s_string_t;\n\n"
+        "} %s_string_t;\n\n",
+        spec->name, spec->name);
+
+    /* String table (with optional GC pointer) */
+    vmgen_buf_appendf(&buf,
+        "#define %s_STRING_TABLE_SIZE 256\n\n"
         "typedef struct {\n"
         "    %s_string_t *buckets[%s_STRING_TABLE_SIZE];\n"
-        "    int count;\n"
-        "} %s_string_table_t;\n\n"
+        "    int count;\n",
+        upper, spec->name, upper);
+    if (spec->features.gc_enabled) {
+        vmgen_buf_appendf(&buf, "    %s_gc_t *gc;\n", spec->name);
+    }
+    vmgen_buf_appendf(&buf, "} %s_string_table_t;\n\n", spec->name);
+
+    /* API declarations */
+    vmgen_buf_appendf(&buf,
         "void %s_string_table_init(%s_string_table_t *table);\n"
         "void %s_string_table_free(%s_string_table_t *table);\n"
         "%s_string_t *%s_string_intern(%s_string_table_t *table, const char *str, size_t len);\n"
         "%s_string_t *%s_string_find(%s_string_table_t *table, const char *str, size_t len);\n",
-        upper,
-        spec->name, spec->name, spec->name,
-        spec->name, upper, spec->name,
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name);
+    if (spec->features.gc_enabled) {
+        vmgen_buf_appendf(&buf,
+            "void %s_string_table_mark(%s_string_table_t *table);\n",
+            spec->name, spec->name);
+    }
 
     vmgen_emit_guard_close(&buf, guard);
 
@@ -103,17 +124,29 @@ int vmgen_gen_strings(const vmgen_spec_t *spec, const char *output_dir) {
         "    for (int i = 0; i < %s_STRING_TABLE_SIZE; i++) {\n"
         "        %s_string_t *s = table->buckets[i];\n"
         "        while (s) {\n"
-        "            %s_string_t *next = s->next;\n"
-        "            free(s->data);\n"
-        "            free(s);\n"
+        "            %s_string_t *next = s->next;\n",
+        spec->name, spec->name, upper,
+        spec->name, spec->name);
+
+    if (spec->features.gc_enabled) {
+        /* GC manages the string_t itself; just free the data */
+        vmgen_buf_append(&buf,
+            "            free(s->data);\n"
+            "            /* string_t is GC-managed; don't free it here */\n");
+    } else {
+        vmgen_buf_append(&buf,
+            "            free(s->data);\n"
+            "            free(s);\n");
+    }
+
+    vmgen_buf_appendf(&buf,
         "            s = next;\n"
         "        }\n"
         "        table->buckets[i] = NULL;\n"
         "    }\n"
         "    table->count = 0;\n"
         "}\n\n",
-        spec->name, spec->name, upper,
-        spec->name, spec->name);
+        spec->name);
 
     /* find */
     vmgen_buf_appendf(&buf,
@@ -135,11 +168,27 @@ int vmgen_gen_strings(const vmgen_spec_t *spec, const char *output_dir) {
     vmgen_buf_appendf(&buf,
         "%s_string_t *%s_string_intern(%s_string_table_t *table, const char *str, size_t len) {\n"
         "    %s_string_t *existing = %s_string_find(table, str, len);\n"
-        "    if (existing) return existing;\n\n"
-        "    %s_string_t *s = (%s_string_t *)malloc(sizeof(%s_string_t));\n"
-        "    if (!s) { fprintf(stderr, \"string intern: out of memory\\n\"); return NULL; }\n"
+        "    if (existing) return existing;\n\n",
+        spec->name, spec->name, spec->name,
+        spec->name, spec->name);
+
+    if (spec->features.gc_enabled) {
+        vmgen_buf_appendf(&buf,
+            "    %s_string_t *s = (%s_string_t *)%s_gc_alloc(\n"
+            "        table->gc, %s_OBJ_STRING, sizeof(%s_string_t));\n"
+            "    if (!s) return NULL;\n",
+            spec->name, spec->name, spec->name,
+            upper, spec->name);
+    } else {
+        vmgen_buf_appendf(&buf,
+            "    %s_string_t *s = (%s_string_t *)malloc(sizeof(%s_string_t));\n"
+            "    if (!s) { fprintf(stderr, \"string intern: out of memory\\n\"); return NULL; }\n",
+            spec->name, spec->name, spec->name);
+    }
+
+    vmgen_buf_appendf(&buf,
         "    s->data = (char *)malloc(len + 1);\n"
-        "    if (!s->data) { free(s); return NULL; }\n"
+        "    if (!s->data) { return NULL; }\n"
         "    memcpy(s->data, str, len);\n"
         "    s->data[len] = '\\0';\n"
         "    s->len = len;\n"
@@ -150,10 +199,24 @@ int vmgen_gen_strings(const vmgen_spec_t *spec, const char *output_dir) {
         "    table->count++;\n"
         "    return s;\n"
         "}\n",
-        spec->name, spec->name, spec->name,
-        spec->name, spec->name,
-        spec->name, spec->name, spec->name,
         upper);
+
+    /* mark all strings (when GC enabled) */
+    if (spec->features.gc_enabled) {
+        vmgen_buf_appendf(&buf,
+            "\nvoid %s_string_table_mark(%s_string_table_t *table) {\n"
+            "    for (int i = 0; i < %s_STRING_TABLE_SIZE; i++) {\n"
+            "        %s_string_t *s = table->buckets[i];\n"
+            "        while (s) {\n"
+            "            %s_gc_mark_object((%s_obj_t *)s);\n"
+            "            s = s->next;\n"
+            "        }\n"
+            "    }\n"
+            "}\n",
+            spec->name, spec->name, upper,
+            spec->name,
+            spec->name, spec->name);
+    }
 
     rc = vmgen_buf_write_file(&buf, path);
     vmgen_buf_free(&buf);
