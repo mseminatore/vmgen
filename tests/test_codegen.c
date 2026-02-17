@@ -418,6 +418,16 @@ void test_codegen(void) {
             TESTEX("modules.c has load impl", strstr(content, "testvm_module_load") != NULL);
             TESTEX("modules.c has find impl", strstr(content, "testvm_module_find") != NULL);
             TESTEX("modules.c has dynamic comment", strstr(content, "Dynamic loading") != NULL);
+            TESTEX("modules.c has circular import check", strstr(content, "circular import") != NULL);
+            TESTEX("modules.c sets LOADING state", strstr(content, "MODULE_LOADING") != NULL);
+            TESTEX("modules.c has mark_loaded", strstr(content, "testvm_module_mark_loaded") != NULL);
+            free(content);
+        }
+
+        content = read_file("test_output/modules.h");
+        if (content) {
+            TESTEX("modules.h has mark_loaded decl", strstr(content, "module_mark_loaded") != NULL);
+            TESTEX("modules.h has LOADING state", strstr(content, "MODULE_LOADING") != NULL);
             free(content);
         }
 

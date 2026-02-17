@@ -77,12 +77,14 @@ int vmgen_gen_modules(const vmgen_spec_t *spec, const char *output_dir) {
         "void %s_module_table_free(%s_module_table_t *table);\n"
         "int  %s_module_load(%s_module_table_t *table, const char *name, const uint8_t *bytecode, size_t size);\n"
         "%s_module_t *%s_module_find(%s_module_table_t *table, const char *name);\n"
+        "void %s_module_mark_loaded(%s_module_t *mod);\n"
         "int64_t %s_module_get_global(%s_module_t *mod, size_t index);\n"
         "void    %s_module_set_global(%s_module_t *mod, size_t index, int64_t value);\n",
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name, spec->name,
+        spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name);
 
@@ -130,8 +132,15 @@ int vmgen_gen_modules(const vmgen_spec_t *spec, const char *output_dir) {
     /* module_load */
     vmgen_buf_appendf(&buf,
         "int %s_module_load(%s_module_table_t *table, const char *name, const uint8_t *bytecode, size_t size) {\n"
-        "    if (%s_module_find(table, name) != NULL)\n"
-        "        return -1; /* already loaded */\n\n"
+        "    /* Check for circular import: if module is currently loading, it's a cycle */\n"
+        "    %s_module_t *existing = %s_module_find(table, name);\n"
+        "    if (existing != NULL) {\n"
+        "        if (existing->state == %s_MODULE_LOADING) {\n"
+        "            fprintf(stderr, \"error: circular import detected for module '%%s'\\n\", name);\n"
+        "            return -2; /* circular import */\n"
+        "        }\n"
+        "        return -1; /* already loaded */\n"
+        "    }\n\n"
         "    if (table->count == table->capacity) {\n"
         "        size_t new_cap = table->capacity ? table->capacity * 2 : 8;\n"
         "        %s_module_t **tmp = (%s_module_t **)realloc(table->modules,\n"
@@ -146,11 +155,15 @@ int vmgen_gen_modules(const vmgen_spec_t *spec, const char *output_dir) {
         "    mod->bytecode = (uint8_t *)bytecode;\n"
         "    mod->bytecode_size = size;\n"
         "    mod->constant_pool = NULL;\n"
-        "    mod->constant_count = 0;\n",
+        "    mod->constant_count = 0;\n"
+        "    mod->state = %s_MODULE_LOADING;\n"
+        "    table->modules[table->count++] = mod;\n",
         spec->name, spec->name,
-        spec->name,
+        spec->name, spec->name,
+        upper,
         spec->name, spec->name, spec->name,
-        spec->name, spec->name, spec->name);
+        spec->name, spec->name, spec->name,
+        upper);
 
     /* Emit loading-mode-specific comment */
     if (spec->features.module_loading == VMGEN_MODULE_STATIC) {
@@ -166,7 +179,6 @@ int vmgen_gen_modules(const vmgen_spec_t *spec, const char *output_dir) {
 
     vmgen_buf_appendf(&buf,
         "    mod->state = %s_MODULE_LOADED;\n"
-        "    table->modules[table->count++] = mod;\n"
         "    return 0;\n"
         "}\n\n",
         upper);
@@ -181,6 +193,13 @@ int vmgen_gen_modules(const vmgen_spec_t *spec, const char *output_dir) {
         "    return NULL;\n"
         "}\n\n",
         spec->name, spec->name, spec->name);
+
+    /* module_mark_loaded */
+    vmgen_buf_appendf(&buf,
+        "void %s_module_mark_loaded(%s_module_t *mod) {\n"
+        "    mod->state = %s_MODULE_LOADED;\n"
+        "}\n\n",
+        spec->name, spec->name, upper);
 
     /* module_get_global */
     vmgen_buf_appendf(&buf,
