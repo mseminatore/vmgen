@@ -943,4 +943,91 @@ void test_actions(void) {
         remove("test_output/gc.c");
         vmgen_spec_free(&spec);
     }
+
+    /* --- Threaded dispatch --- */
+    MODULE("Threaded Dispatch");
+
+    SUITE("Auto dispatch has threaded + fnptr paths");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.dispatch = VMGEN_DISPATCH_AUTO;
+        spec.instructions[1].action = vmgen_strdup("pop b; pop a; push a + b");
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm auto succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("has __GNUC__ guard", strstr(content, "#if defined(__GNUC__)") != NULL);
+            TESTEX("has dispatch_table labels", strstr(content, "&&op_") != NULL);
+            TESTEX("has DISPATCH macro", strstr(content, "#define DISPATCH()") != NULL);
+            TESTEX("has goto *", strstr(content, "goto *dispatch_table") != NULL);
+            TESTEX("has #else fnptr fallback", strstr(content, "#else") != NULL);
+            TESTEX("has fnptr handler table", strstr(content, "testvm_dispatch_table") != NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Threaded dispatch has computed gotos");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.dispatch = VMGEN_DISPATCH_THREADED;
+        spec.instructions[0].action = vmgen_strdup("push constants[$index]");
+        spec.instructions[1].action = vmgen_strdup("pop b; pop a; push a + b");
+        spec.instructions[2].action = vmgen_strdup("halt");
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm threaded succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("has op_PUSH_CONST label", strstr(content, "op_PUSH_CONST:") != NULL);
+            TESTEX("has op_ADD label", strstr(content, "op_ADD:") != NULL);
+            TESTEX("has op_HALT label", strstr(content, "op_HALT:") != NULL);
+            TESTEX("has DISPATCH() calls", strstr(content, "DISPATCH();") != NULL);
+            TESTEX("has #undef DISPATCH", strstr(content, "#undef DISPATCH") != NULL);
+            TESTEX("has #error for non-GCC", strstr(content, "#error") != NULL);
+            TESTEX("no fnptr table", strstr(content, "testvm_dispatch_table") == NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Switch dispatch has no computed gotos");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.dispatch = VMGEN_DISPATCH_SWITCH;
+        spec.instructions[1].action = vmgen_strdup("pop b; pop a; push a + b");
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm switch succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("has switch", strstr(content, "switch (opcode)") != NULL);
+            TESTEX("no goto *", strstr(content, "goto *") == NULL);
+            TESTEX("no DISPATCH macro", strstr(content, "#define DISPATCH()") == NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
 }

@@ -291,6 +291,64 @@ static void emit_switch_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
         "    }\n");
 }
 
+
+/* ---- Generate vm.c (threaded dispatch via computed gotos) ---- */
+
+static void emit_threaded_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
+                                   const char *upper) {
+    /* Label dispatch table */
+    vmgen_buf_append(buf,
+        "    static void *dispatch_table[] = {\n");
+    for (int i = 0; i < spec->instruction_count; i++) {
+        vmgen_buf_appendf(buf, "        &&op_%s,\n", spec->instructions[i].name);
+    }
+    vmgen_buf_append(buf, "    };\n\n");
+
+    vmgen_buf_append(buf,
+        "#define DISPATCH() goto *dispatch_table[vm->code[vm->ip++]]\n\n"
+        "    DISPATCH();\n\n");
+
+    /* Emit labeled blocks */
+    for (int i = 0; i < spec->instruction_count; i++) {
+        const vmgen_instr_t *instr = &spec->instructions[i];
+        vmgen_buf_appendf(buf, "    op_%s: {\n", instr->name);
+
+        if (spec->features.debug_tracing) {
+            vmgen_buf_appendf(buf,
+                "        if (vm->trace_enabled) {\n"
+                "            %s_disasm_instruction(vm->code, vm->code_len, vm->ip - 1);\n"
+                "        }\n",
+                spec->name);
+        }
+
+        /* Decode operands */
+        for (int j = 0; j < instr->operand_count; j++) {
+            vmgen_buf_appendf(buf, "        %s %s = %s;\n",
+                              c_type_for_operand(instr->operands[j].type),
+                              instr->operands[j].name,
+                              read_macro_for(instr->operands[j].type));
+        }
+
+        /* GC inhibit + action body + GC allow */
+        bool terminal = action_has_terminal(instr) != 0;
+        if (spec->features.gc_enabled) {
+            vmgen_buf_appendf(buf, "        if (vm->gc) %s_gc_inhibit(vm->gc);\n", spec->name);
+        }
+        emit_action_body(buf, spec, instr, "        ");
+        if (spec->features.gc_enabled && !terminal) {
+            vmgen_buf_appendf(buf, "        if (vm->gc) %s_gc_allow(vm->gc);\n", spec->name);
+        }
+
+        if (!terminal) {
+            vmgen_buf_append(buf, "        DISPATCH();\n");
+        }
+        vmgen_buf_append(buf, "    }\n\n");
+    }
+
+    vmgen_buf_append(buf, "#undef DISPATCH\n");
+
+    (void)upper;
+}
 static void emit_fnptr_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
                                 const char *upper) {
     /* Forward-declare handler type */
@@ -475,14 +533,14 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         break;
     case VMGEN_DISPATCH_AUTO:
         vmgen_buf_append(&buf, "#if defined(__GNUC__) || defined(__clang__)\n");
-        vmgen_buf_append(&buf, "    /* TODO: threaded dispatch */\n");
-        vmgen_buf_append(&buf, "    /* Falling through to fnptr for now */\n");
-        vmgen_buf_append(&buf, "#endif\n");
+        emit_threaded_dispatch(&buf, spec, upper);
+        vmgen_buf_append(&buf, "#else\n");
         emit_fnptr_loop(&buf, spec, upper);
+        vmgen_buf_append(&buf, "#endif\n");
         break;
     case VMGEN_DISPATCH_THREADED:
         vmgen_buf_append(&buf, "#if defined(__GNUC__) || defined(__clang__)\n");
-        vmgen_buf_append(&buf, "    /* TODO: threaded dispatch with computed gotos */\n");
+        emit_threaded_dispatch(&buf, spec, upper);
         vmgen_buf_append(&buf, "#else\n");
         vmgen_buf_append(&buf, "#error \"Threaded dispatch requires GCC or Clang\"\n");
         vmgen_buf_append(&buf, "#endif\n");
