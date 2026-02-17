@@ -32,3 +32,5 @@ compile_commands.json
 Thumbs.db
 test_stdout.txt
 test_stderr.txt
+test_output/
+test_gen/

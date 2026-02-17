@@ -54,6 +54,8 @@ int vmgen_gen_build(const vmgen_spec_t *spec, const char *output_dir) {
         vmgen_buf_append(&buf, "    fibers.c\n");
     }
 
+    vmgen_buf_append(&buf, "    bytecode.c\n");
+
     vmgen_buf_appendf(&buf,
         ")\n\n"
         "target_include_directories(%s_vm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})\n\n",

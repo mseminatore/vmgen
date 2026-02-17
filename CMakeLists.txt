@@ -41,6 +41,7 @@ add_executable(vmgen
     src/codegen/gen_fibers.c
     src/codegen/gen_native.c
     src/codegen/gen_build.c
+    src/codegen/gen_bytecode.c
 )
 
 target_include_directories(vmgen PRIVATE
@@ -75,6 +76,7 @@ add_executable(vmgen_tests
     src/codegen/gen_fibers.c
     src/codegen/gen_native.c
     src/codegen/gen_build.c
+    src/codegen/gen_bytecode.c
 )
 
 target_include_directories(vmgen_tests PRIVATE

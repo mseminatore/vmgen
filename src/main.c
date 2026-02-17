@@ -24,6 +24,7 @@
 #include "codegen/gen_fibers.h"
 #include "codegen/gen_native.h"
 #include "codegen/gen_build.h"
+#include "codegen/gen_bytecode.h"
 
 static void print_usage(const char *progname) {
     fprintf(stderr, "Usage: %s <spec.yaml> -o <output_dir>\n", progname);
@@ -158,6 +159,13 @@ int main(int argc, char *argv[]) {
     rc = vmgen_gen_fibers(&spec, output_dir);
     if (rc != 0) {
         fprintf(stderr, "Error: fiber generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    rc = vmgen_gen_bytecode(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: bytecode format generation failed\n");
         vmgen_spec_free(&spec);
         return 1;
     }

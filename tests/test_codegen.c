@@ -12,6 +12,7 @@
 #include "codegen/gen_strings.h"
 #include "codegen/gen_gc.h"
 #include "codegen/gen_build.h"
+#include "codegen/gen_bytecode.h"
 #include "codegen/action_parser.h"
 #include "codegen/action_emit.h"
 #include "spec/model.h"
@@ -517,6 +518,7 @@ void test_integration(void) {
     TESTEX("gen_closures", vmgen_gen_closures(&spec, "test_gen") == 0);
     TESTEX("gen_modules", vmgen_gen_modules(&spec, "test_gen") == 0);
     TESTEX("gen_fibers", vmgen_gen_fibers(&spec, "test_gen") == 0);
+    TESTEX("gen_bytecode", vmgen_gen_bytecode(&spec, "test_gen") == 0);
     TESTEX("gen_build", vmgen_gen_build(&spec, "test_gen") == 0);
 
     SUITE("Verify all output files exist");
@@ -559,6 +561,16 @@ void test_integration(void) {
         TESTEX("CMakeLists includes closures.c", strstr(content, "closures.c") != NULL);
         TESTEX("CMakeLists includes modules.c", strstr(content, "modules.c") != NULL);
         TESTEX("CMakeLists includes fibers.c", strstr(content, "fibers.c") != NULL);
+        TESTEX("CMakeLists includes bytecode.c", strstr(content, "bytecode.c") != NULL);
+        free(content);
+    }
+
+    content = read_file("test_gen/bytecode.h");
+    TESTEX("bytecode.h exists", content != NULL);
+    if (content) {
+        TESTEX("bytecode.h has magic", strstr(content, "BC_MAGIC") != NULL);
+        TESTEX("bytecode.h has bc_save", strstr(content, "bc_save") != NULL);
+        TESTEX("bytecode.h has bc_load", strstr(content, "bc_load") != NULL);
         free(content);
     }
 
@@ -582,6 +594,8 @@ void test_integration(void) {
     remove("test_gen/modules.c");
     remove("test_gen/fibers.h");
     remove("test_gen/fibers.c");
+    remove("test_gen/bytecode.h");
+    remove("test_gen/bytecode.c");
     remove("test_gen/CMakeLists.txt");
 
     vmgen_spec_free(&spec);
