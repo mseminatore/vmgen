@@ -57,14 +57,18 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
     /* GC state */
     vmgen_buf_appendf(&buf,
         "#define %s_GC_INITIAL_THRESHOLD (1024 * 1024)\n\n"
+        "typedef void (*%s_gc_mark_roots_fn)(void *user_data);\n\n"
         "typedef struct {\n"
         "    %s_obj_t *objects;\n"
         "    size_t bytes_allocated;\n"
         "    size_t next_gc;\n"
         "    int enabled;\n"
         "    int inhibit_count;\n"
+        "    %s_gc_mark_roots_fn mark_roots;\n"
+        "    void *roots_data;\n"
         "} %s_gc_t;\n\n",
-        upper, spec->name, spec->name);
+        upper, spec->name,
+        spec->name, spec->name, spec->name);
 
     /* API */
     vmgen_buf_appendf(&buf,
@@ -74,14 +78,16 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
         "void  %s_gc_mark_object(%s_obj_t *obj);\n"
         "void  %s_gc_collect(%s_gc_t *gc);\n"
         "void  %s_gc_inhibit(%s_gc_t *gc);\n"
-        "void  %s_gc_allow(%s_gc_t *gc);\n",
+        "void  %s_gc_allow(%s_gc_t *gc);\n"
+        "void  %s_gc_set_roots(%s_gc_t *gc, %s_gc_mark_roots_fn fn, void *data);\n",
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name,
-        spec->name, spec->name);
+        spec->name, spec->name,
+        spec->name, spec->name, spec->name);
 
     vmgen_emit_guard_close(&buf, guard);
 
@@ -110,6 +116,8 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
         "    gc->next_gc = %s_GC_INITIAL_THRESHOLD;\n"
         "    gc->enabled = 1;\n"
         "    gc->inhibit_count = 0;\n"
+        "    gc->mark_roots = NULL;\n"
+        "    gc->roots_data = NULL;\n"
         "}\n\n",
         spec->name, spec->name, upper);
 
@@ -161,11 +169,15 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
         "}\n\n",
         spec->name, spec->name);
 
-    /* sweep */
+    /* collect: mark roots then sweep */
     vmgen_buf_appendf(&buf,
         "void %s_gc_collect(%s_gc_t *gc) {\n"
         "    if (!gc->enabled || gc->inhibit_count > 0) return;\n\n"
-        "    /* Sweep: free unmarked objects */\n"
+        "    /* Mark phase: let the owner mark all reachable objects */\n"
+        "    if (gc->mark_roots) {\n"
+        "        gc->mark_roots(gc->roots_data);\n"
+        "    }\n\n"
+        "    /* Sweep phase: free unmarked objects */\n"
         "    %s_obj_t **obj = &gc->objects;\n"
         "    while (*obj) {\n"
         "        if (!(*obj)->marked) {\n"
@@ -190,9 +202,14 @@ int vmgen_gen_gc(const vmgen_spec_t *spec, const char *output_dir) {
         "}\n\n"
         "void %s_gc_allow(%s_gc_t *gc) {\n"
         "    if (gc->inhibit_count > 0) gc->inhibit_count--;\n"
+        "}\n\n"
+        "void %s_gc_set_roots(%s_gc_t *gc, %s_gc_mark_roots_fn fn, void *data) {\n"
+        "    gc->mark_roots = fn;\n"
+        "    gc->roots_data = data;\n"
         "}\n",
         spec->name, spec->name,
-        spec->name, spec->name);
+        spec->name, spec->name,
+        spec->name, spec->name, spec->name);
 
     rc = vmgen_buf_write_file(&buf, path);
     vmgen_buf_free(&buf);

@@ -944,6 +944,109 @@ void test_actions(void) {
         vmgen_spec_free(&spec);
     }
 
+    SUITE("GC has mark_roots callback");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_MARK_SWEEP;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_gc(&spec, "test_output");
+        TESTEX("gen_gc succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/gc.h");
+        TESTEX("gc.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("gc.h has mark_roots_fn typedef", strstr(hdr, "mark_roots_fn") != NULL);
+            TESTEX("gc.h has mark_roots field", strstr(hdr, "mark_roots;") != NULL);
+            TESTEX("gc.h has roots_data field", strstr(hdr, "roots_data") != NULL);
+            TESTEX("gc.h has gc_set_roots decl", strstr(hdr, "gc_set_roots") != NULL);
+            free(hdr);
+        }
+
+        char *impl = read_file("test_output/gc.c");
+        TESTEX("gc.c created", impl != NULL);
+        if (impl) {
+            TESTEX("gc.c calls mark_roots in collect", strstr(impl, "gc->mark_roots(gc->roots_data)") != NULL);
+            TESTEX("gc.c has gc_set_roots impl", strstr(impl, "gc->mark_roots = fn") != NULL);
+            TESTEX("gc.c inits mark_roots NULL", strstr(impl, "mark_roots = NULL") != NULL);
+            free(impl);
+        }
+
+        remove("test_output/gc.h");
+        remove("test_output/gc.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("GC-enabled VM has mark_roots + OBJ type");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = true;
+        spec.features.gc_strategy = VMGEN_GC_MARK_SWEEP;
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.instructions[1].action = vmgen_strdup("pop b; pop a; push a + b");
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("vm.h has VAL_OBJ enum", strstr(hdr, "VAL_OBJ") != NULL);
+            TESTEX("vm.h has obj pointer in union", strstr(hdr, "obj_t *obj") != NULL);
+            TESTEX("vm.h has OBJ constructor", strstr(hdr, "_OBJ(v)") != NULL);
+            free(hdr);
+        }
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c has mark_roots function", strstr(content, "mark_roots") != NULL);
+            TESTEX("vm.c scans stack for OBJ", strstr(content, "VAL_OBJ") != NULL);
+            TESTEX("vm.c calls gc_mark_object", strstr(content, "gc_mark_object") != NULL);
+            TESTEX("vm.c registers roots in run", strstr(content, "gc_set_roots") != NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("No-GC VM has no OBJ type or mark_roots");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.gc_enabled = false;
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("vm.h has no VAL_OBJ", strstr(hdr, "VAL_OBJ") == NULL);
+            TESTEX("vm.h has no obj pointer", strstr(hdr, "obj_t *obj") == NULL);
+            free(hdr);
+        }
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c has no mark_roots", strstr(content, "mark_roots") == NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
     /* --- Threaded dispatch --- */
     MODULE("Threaded Dispatch");
 

@@ -94,9 +94,14 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
             "typedef enum {\n"
             "    %s_VAL_INT64,\n"
             "    %s_VAL_DOUBLE,\n"
-            "    %s_VAL_BOOL,\n"
-            "} %s_val_type_t;\n\n",
-            upper, upper, upper, spec->name);
+            "    %s_VAL_BOOL,\n",
+            upper, upper, upper);
+        if (spec->features.gc_enabled) {
+            vmgen_buf_appendf(&buf,
+                "    %s_VAL_OBJ,\n", upper);
+        }
+        vmgen_buf_appendf(&buf,
+            "} %s_val_type_t;\n\n", spec->name);
 
         vmgen_buf_appendf(&buf,
             "typedef struct {\n"
@@ -104,19 +109,30 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
             "    union {\n"
             "        int64_t i64;\n"
             "        double  f64;\n"
-            "        int     boolean;\n"
+            "        int     boolean;\n",
+            spec->name);
+        if (spec->features.gc_enabled) {
+            vmgen_buf_appendf(&buf,
+                "        %s_obj_t *obj;\n", spec->name);
+        }
+        vmgen_buf_appendf(&buf,
             "    } as;\n"
-            "} %s_value_t;\n\n",
-            spec->name, spec->name);
+            "} %s_value_t;\n\n", spec->name);
 
         /* Value constructors */
         vmgen_buf_appendf(&buf,
             "#define %s_INT64(v)  ((%s_value_t){ .type = %s_VAL_INT64,  .as.i64 = (v) })\n"
             "#define %s_DOUBLE(v) ((%s_value_t){ .type = %s_VAL_DOUBLE, .as.f64 = (v) })\n"
-            "#define %s_BOOL(v)   ((%s_value_t){ .type = %s_VAL_BOOL,   .as.boolean = (v) })\n\n",
+            "#define %s_BOOL(v)   ((%s_value_t){ .type = %s_VAL_BOOL,   .as.boolean = (v) })\n",
             upper, spec->name, upper,
             upper, spec->name, upper,
             upper, spec->name, upper);
+        if (spec->features.gc_enabled) {
+            vmgen_buf_appendf(&buf,
+                "#define %s_OBJ(v)    ((%s_value_t){ .type = %s_VAL_OBJ,    .as.obj = (v) })\n",
+                upper, spec->name, upper);
+        }
+        vmgen_buf_appendc(&buf, '\n');
     } else if (spec->stack.value_type == VMGEN_VALUE_DOUBLE) {
         vmgen_buf_appendf(&buf, "typedef double %s_value_t;\n\n", spec->name);
     } else {
@@ -508,6 +524,39 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         "}\n\n",
         spec->name, spec->name, spec->name, upper);
 
+    /* GC root scanning function (when GC enabled) */
+    if (spec->features.gc_enabled) {
+        vmgen_buf_appendf(&buf,
+            "static void %s_vm_mark_roots(void *data) {\n"
+            "    %s_vm_t *vm = (%s_vm_t *)data;\n",
+            spec->name, spec->name, spec->name);
+
+        if (spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION) {
+            vmgen_buf_appendf(&buf,
+                "    /* Mark object references on the stack */\n"
+                "    for (int i = 0; i < vm->sp; i++) {\n"
+                "        if (vm->stack[i].type == %s_VAL_OBJ && vm->stack[i].as.obj) {\n"
+                "            %s_gc_mark_object(vm->stack[i].as.obj);\n"
+                "        }\n"
+                "    }\n"
+                "    /* Mark object references in the constant pool */\n"
+                "    for (int i = 0; i < vm->constants.count; i++) {\n"
+                "        if (vm->constants.values[i].type == %s_VAL_OBJ &&\n"
+                "            vm->constants.values[i].as.obj) {\n"
+                "            %s_gc_mark_object(vm->constants.values[i].as.obj);\n"
+                "        }\n"
+                "    }\n",
+                upper, spec->name,
+                upper, spec->name);
+        } else {
+            vmgen_buf_append(&buf,
+                "    /* Non-tagged-union value type: no embedded object references */\n"
+                "    (void)vm;\n");
+        }
+
+        vmgen_buf_append(&buf, "}\n\n");
+    }
+
     /* Emit function-pointer handlers if fnptr or auto dispatch */
     if (spec->dispatch == VMGEN_DISPATCH_FNPTR ||
         spec->dispatch == VMGEN_DISPATCH_AUTO) {
@@ -521,8 +570,18 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         "    vm->code_len = code_len;\n"
         "    vm->ip = 0;\n"
         "    vm->sp = 0;\n"
-        "    vm->running = 1;\n\n",
+        "    vm->running = 1;\n",
         spec->name, spec->name);
+
+    if (spec->features.gc_enabled) {
+        vmgen_buf_appendf(&buf,
+            "    if (vm->gc) {\n"
+            "        %s_gc_set_roots(vm->gc, %s_vm_mark_roots, vm);\n"
+            "    }\n",
+            spec->name, spec->name);
+    }
+
+    vmgen_buf_appendc(&buf, '\n');
 
     switch (spec->dispatch) {
     case VMGEN_DISPATCH_SWITCH:
