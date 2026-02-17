@@ -13,6 +13,7 @@
 #include "codegen/gen_gc.h"
 #include "codegen/gen_build.h"
 #include "codegen/gen_bytecode.h"
+#include "codegen/gen_test.h"
 #include "codegen/action_parser.h"
 #include "codegen/action_emit.h"
 #include "spec/model.h"
@@ -519,6 +520,7 @@ void test_integration(void) {
     TESTEX("gen_modules", vmgen_gen_modules(&spec, "test_gen") == 0);
     TESTEX("gen_fibers", vmgen_gen_fibers(&spec, "test_gen") == 0);
     TESTEX("gen_bytecode", vmgen_gen_bytecode(&spec, "test_gen") == 0);
+    TESTEX("gen_test", vmgen_gen_test(&spec, "test_gen") == 0);
     TESTEX("gen_build", vmgen_gen_build(&spec, "test_gen") == 0);
 
     SUITE("Verify all output files exist");
@@ -555,22 +557,35 @@ void test_integration(void) {
     TESTEX("fibers.h exists", content != NULL);
     if (content) { TESTEX("fibers has fullvm fiber", strstr(content, "fullvm_fiber_t") != NULL); free(content); }
 
-    content = read_file("test_gen/CMakeLists.txt");
-    TESTEX("CMakeLists.txt exists", content != NULL);
-    if (content) {
-        TESTEX("CMakeLists includes closures.c", strstr(content, "closures.c") != NULL);
-        TESTEX("CMakeLists includes modules.c", strstr(content, "modules.c") != NULL);
-        TESTEX("CMakeLists includes fibers.c", strstr(content, "fibers.c") != NULL);
-        TESTEX("CMakeLists includes bytecode.c", strstr(content, "bytecode.c") != NULL);
-        free(content);
-    }
-
     content = read_file("test_gen/bytecode.h");
     TESTEX("bytecode.h exists", content != NULL);
     if (content) {
         TESTEX("bytecode.h has magic", strstr(content, "BC_MAGIC") != NULL);
         TESTEX("bytecode.h has bc_save", strstr(content, "bc_save") != NULL);
         TESTEX("bytecode.h has bc_load", strstr(content, "bc_load") != NULL);
+        free(content);
+    }
+
+    content = read_file("test_gen/test_vm.c");
+    TESTEX("test_vm.c exists", content != NULL);
+    if (content) {
+        TESTEX("test_vm.c includes vm.h", strstr(content, "#include \"vm.h\"") != NULL);
+        TESTEX("test_vm.c has test_vm_init", strstr(content, "test_vm_init") != NULL);
+        TESTEX("test_vm.c has test_push_pop", strstr(content, "test_push_pop") != NULL);
+        TESTEX("test_vm.c has test_halt", strstr(content, "test_halt") != NULL);
+        TESTEX("test_vm.c has test_add", strstr(content, "test_add") != NULL);
+        TESTEX("test_vm.c has test_assembler", strstr(content, "test_assembler") != NULL);
+        TESTEX("test_vm.c has test_bytecode_roundtrip", strstr(content, "test_bytecode_roundtrip") != NULL);
+        TESTEX("test_vm.c has main", strstr(content, "int main(void)") != NULL);
+        free(content);
+    }
+
+    content = read_file("test_gen/CMakeLists.txt");
+    TESTEX("CMakeLists.txt exists", content != NULL);
+    if (content) {
+        TESTEX("CMakeLists includes test_vm.c", strstr(content, "test_vm.c") != NULL);
+        TESTEX("CMakeLists has enable_testing", strstr(content, "enable_testing") != NULL);
+        TESTEX("CMakeLists has add_test", strstr(content, "add_test") != NULL);
         free(content);
     }
 
@@ -596,6 +611,7 @@ void test_integration(void) {
     remove("test_gen/fibers.c");
     remove("test_gen/bytecode.h");
     remove("test_gen/bytecode.c");
+    remove("test_gen/test_vm.c");
     remove("test_gen/CMakeLists.txt");
 
     vmgen_spec_free(&spec);

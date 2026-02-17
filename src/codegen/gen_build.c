@@ -65,8 +65,18 @@ int vmgen_gen_build(const vmgen_spec_t *spec, const char *output_dir) {
     vmgen_buf_appendf(&buf,
         "# Example executable (uncomment and create main.c to use)\n"
         "# add_executable(%s_example main.c)\n"
-        "# target_link_libraries(%s_example PRIVATE %s_vm)\n",
+        "# target_link_libraries(%s_example PRIVATE %s_vm)\n\n",
         spec->name, spec->name, spec->name);
+
+    /* Test executable using generated smoke tests */
+    vmgen_buf_appendf(&buf,
+        "# Smoke tests\n"
+        "enable_testing()\n"
+        "add_executable(%s_tests test_vm.c)\n"
+        "target_link_libraries(%s_tests PRIVATE %s_vm)\n"
+        "add_test(NAME %s_tests COMMAND %s_tests)\n",
+        spec->name, spec->name, spec->name,
+        spec->name, spec->name);
 
     int rc = vmgen_buf_write_file(&buf, path);
     vmgen_buf_free(&buf);
