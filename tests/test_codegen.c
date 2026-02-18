@@ -1600,4 +1600,46 @@ void test_actions(void) {
         remove("test_output/linemap.c");
         vmgen_spec_free(&spec);
     }
+
+    MODULE("Debug Stepping API");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+
+        MKDIR("test_output");
+        vmgen_gen_vm(&spec, "test_output");
+
+        SUITE("VM header has debug stepping API");
+        {
+            char *hdr = read_file("test_output/vm.h");
+            TESTEX("vm.h created", hdr != NULL);
+            if (hdr) {
+                TESTEX("has MAX_BREAKPOINTS", strstr(hdr, "TESTVM_MAX_BREAKPOINTS") != NULL);
+                TESTEX("has vm_step", strstr(hdr, "testvm_vm_step") != NULL);
+                TESTEX("has vm_set_breakpoint", strstr(hdr, "testvm_vm_set_breakpoint") != NULL);
+                TESTEX("has vm_clear_breakpoint", strstr(hdr, "testvm_vm_clear_breakpoint") != NULL);
+                TESTEX("has step_callback field", strstr(hdr, "step_callback") != NULL);
+                TESTEX("has set_step_callback", strstr(hdr, "testvm_vm_set_step_callback") != NULL);
+                free(hdr);
+            }
+        }
+
+        SUITE("VM source has debug stepping impl");
+        {
+            char *src = read_file("test_output/vm.c");
+            TESTEX("vm.c created", src != NULL);
+            if (src) {
+                TESTEX("has vm_step impl", strstr(src, "testvm_vm_step(testvm_vm_t") != NULL);
+                TESTEX("has set_breakpoint impl", strstr(src, "testvm_vm_set_breakpoint(testvm_vm_t") != NULL);
+                TESTEX("has clear_breakpoint impl", strstr(src, "testvm_vm_clear_breakpoint(testvm_vm_t") != NULL);
+                TESTEX("step checks running", strstr(src, "vm->running") != NULL);
+                TESTEX("step calls callback", strstr(src, "step_callback") != NULL);
+                free(src);
+            }
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
 }

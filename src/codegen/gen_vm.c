@@ -150,13 +150,14 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
 
     /* Call frame */
     vmgen_buf_appendf(&buf,
-        "#define %s_MAX_FRAMES 64\n\n"
+        "#define %s_MAX_FRAMES 64\n"
+        "#define %s_MAX_BREAKPOINTS 32\n\n"
         "typedef struct {\n"
         "    size_t return_ip;\n"
         "    int base_sp;\n"
         "    uint16_t func_index;\n"
         "} %s_frame_t;\n\n",
-        upper, spec->name);
+        upper, upper, spec->name);
 
     /* Error handling */
     vmgen_buf_appendf(&buf,
@@ -202,8 +203,12 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
     vmgen_buf_appendf(&buf,
         "    %s_error_t last_error;\n"
         "    %s_error_handler_t error_handler;\n"
-        "    void *error_userdata;\n",
-        spec->name, spec->name);
+        "    void *error_userdata;\n"
+        "    /* Debug stepping */\n"
+        "    size_t breakpoints[%s_MAX_BREAKPOINTS];\n"
+        "    int breakpoint_count;\n"
+        "    void (*step_callback)(void *vm, size_t ip);\n",
+        spec->name, spec->name, upper);
 
     vmgen_buf_appendf(&buf, "} %s_vm_t;\n\n", spec->name);
 
@@ -214,13 +219,22 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "void %s_vm_push(%s_vm_t *vm, %s_value_t value);\n"
         "%s_value_t %s_vm_pop(%s_vm_t *vm);\n"
         "int  %s_vm_add_constant(%s_vm_t *vm, %s_value_t value);\n"
-        "void %s_vm_set_error_handler(%s_vm_t *vm, %s_error_handler_t handler, void *userdata);\n",
+        "void %s_vm_set_error_handler(%s_vm_t *vm, %s_error_handler_t handler, void *userdata);\n"
+        "/* Debug stepping API */\n"
+        "int  %s_vm_step(%s_vm_t *vm);\n"
+        "int  %s_vm_set_breakpoint(%s_vm_t *vm, size_t offset);\n"
+        "int  %s_vm_clear_breakpoint(%s_vm_t *vm, size_t offset);\n"
+        "void %s_vm_set_step_callback(%s_vm_t *vm, void (*cb)(void *vm, size_t ip));\n",
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name,
-        spec->name, spec->name, spec->name);
+        spec->name, spec->name, spec->name,
+        spec->name, spec->name,
+        spec->name, spec->name,
+        spec->name, spec->name,
+        spec->name, spec->name);
 
     vmgen_emit_guard_close(&buf, guard);
 
@@ -663,7 +677,75 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         break;
     }
 
-    vmgen_buf_append(&buf, "    return 0;\n}\n");
+    vmgen_buf_append(&buf, "    return 0;\n}\n\n");
+
+    /* Debug stepping: vm_step — execute one instruction */
+    vmgen_buf_appendf(&buf,
+        "int %s_vm_step(%s_vm_t *vm) {\n"
+        "    if (!vm->running || vm->ip >= vm->code_len) return -1;\n"
+        "    if (vm->step_callback) vm->step_callback(vm, vm->ip);\n"
+        "    uint8_t opcode = vm->code[vm->ip++];\n",
+        spec->name, spec->name);
+
+    /* Emit a switch for single-step that handles one opcode */
+    vmgen_buf_append(&buf, "    switch (opcode) {\n");
+    for (int i = 0; i < spec->instruction_count; i++) {
+        const vmgen_instr_t *instr = &spec->instructions[i];
+        vmgen_buf_appendf(&buf, "    case %s_OP_%s: {\n", upper, instr->name);
+
+        /* Decode operands */
+        for (int j = 0; j < instr->operand_count; j++) {
+            const vmgen_operand_t *op = &instr->operands[j];
+            if (op->type == VMGEN_OPERAND_UINT8) {
+                vmgen_buf_appendf(&buf, "        uint8_t %s = READ_UINT8();\n", op->name);
+            } else if (op->type == VMGEN_OPERAND_UINT16) {
+                vmgen_buf_appendf(&buf, "        uint16_t %s = READ_UINT16();\n", op->name);
+            } else if (op->type == VMGEN_OPERAND_INT16) {
+                vmgen_buf_appendf(&buf, "        int16_t %s = (int16_t)READ_UINT16();\n", op->name);
+            }
+        }
+
+        emit_action_body(&buf, spec, instr, "        ");
+        if (!action_has_terminal(instr)) {
+            vmgen_buf_append(&buf, "        break;\n");
+        }
+        vmgen_buf_append(&buf, "    }\n");
+    }
+    vmgen_buf_appendf(&buf,
+        "    default: {\n"
+        "        char msg[64];\n"
+        "        snprintf(msg, sizeof(msg), \"unknown opcode %%d at ip %%zu\",\n"
+        "                 opcode, vm->ip - 1);\n"
+        "        %s_vm_error(vm, %s_ERR_UNKNOWN_OPCODE, msg);\n"
+        "        return -1;\n"
+        "    }\n"
+        "    }\n"
+        "    return 0;\n"
+        "}\n\n",
+        spec->name, upper);
+
+    /* Breakpoint management */
+    vmgen_buf_appendf(&buf,
+        "int %s_vm_set_breakpoint(%s_vm_t *vm, size_t offset) {\n"
+        "    if (vm->breakpoint_count >= %s_MAX_BREAKPOINTS) return -1;\n"
+        "    vm->breakpoints[vm->breakpoint_count++] = offset;\n"
+        "    return 0;\n"
+        "}\n\n"
+        "int %s_vm_clear_breakpoint(%s_vm_t *vm, size_t offset) {\n"
+        "    for (int i = 0; i < vm->breakpoint_count; i++) {\n"
+        "        if (vm->breakpoints[i] == offset) {\n"
+        "            vm->breakpoints[i] = vm->breakpoints[--vm->breakpoint_count];\n"
+        "            return 0;\n"
+        "        }\n"
+        "    }\n"
+        "    return -1;\n"
+        "}\n\n"
+        "void %s_vm_set_step_callback(%s_vm_t *vm, void (*cb)(void *vm, size_t ip)) {\n"
+        "    vm->step_callback = cb;\n"
+        "}\n",
+        spec->name, spec->name, upper,
+        spec->name, spec->name,
+        spec->name, spec->name);
 
     int rc = vmgen_buf_write_file(&buf, path);
     vmgen_buf_free(&buf);
