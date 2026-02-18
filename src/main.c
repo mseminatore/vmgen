@@ -28,6 +28,7 @@
 #include "codegen/gen_bytecode.h"
 #include "codegen/gen_test.h"
 #include "codegen/gen_linemap.h"
+#include "codegen/gen_verify.h"
 #include "codegen/gen_single_header.h"
 
 static void print_usage(const char *progname) {
@@ -190,6 +191,13 @@ int main(int argc, char *argv[]) {
     rc = vmgen_gen_linemap(&spec, output_dir);
     if (rc != 0) {
         fprintf(stderr, "Error: linemap generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    rc = vmgen_gen_verify(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: verifier generation failed\n");
         vmgen_spec_free(&spec);
         return 1;
     }

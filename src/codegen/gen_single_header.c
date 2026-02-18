@@ -127,7 +127,7 @@ int vmgen_gen_single_header(const vmgen_spec_t *spec, const char *output_dir) {
     const char *headers[] = {
         "opcodes.h", "gc.h", "strings.h", "closures.h",
         "native.h", "modules.h", "fibers.h",
-        "vm.h", "assembler.h", "disasm.h", "bytecode.h", "linemap.h",
+        "vm.h", "assembler.h", "disasm.h", "bytecode.h", "linemap.h", "verify.h",
         NULL
     };
 
@@ -162,7 +162,7 @@ int vmgen_gen_single_header(const vmgen_spec_t *spec, const char *output_dir) {
     const char *sources[] = {
         "gc.c", "strings.c", "closures.c",
         "native.c", "modules.c", "fibers.c",
-        "vm.c", "assembler.c", "disasm.c", "bytecode.c", "linemap.c",
+        "vm.c", "assembler.c", "disasm.c", "bytecode.c", "linemap.c", "verify.c",
         NULL
     };
 

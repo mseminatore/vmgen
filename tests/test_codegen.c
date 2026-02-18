@@ -15,6 +15,7 @@
 #include "codegen/gen_bytecode.h"
 #include "codegen/gen_test.h"
 #include "codegen/gen_linemap.h"
+#include "codegen/gen_verify.h"
 #include "codegen/gen_single_header.h"
 #include "codegen/action_parser.h"
 #include "codegen/action_emit.h"
@@ -1640,6 +1641,76 @@ void test_actions(void) {
 
         remove("test_output/vm.h");
         remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    MODULE("Bytecode Verifier");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_verify(&spec, "test_output");
+        TESTEX("gen_verify succeeds", rc == 0);
+
+        SUITE("verify.h has types and API");
+        {
+            char *hdr = read_file("test_output/verify.h");
+            TESTEX("verify.h created", hdr != NULL);
+            if (hdr) {
+                TESTEX("has error type", strstr(hdr, "testvm_verify_error_t") != NULL);
+                TESTEX("has result type", strstr(hdr, "testvm_verify_result_t") != NULL);
+                TESTEX("has init", strstr(hdr, "testvm_verify_init") != NULL);
+                TESTEX("has free", strstr(hdr, "testvm_verify_free") != NULL);
+                TESTEX("has verify func", strstr(hdr, "testvm_verify(") != NULL);
+                TESTEX("takes const_count", strstr(hdr, "const_count") != NULL);
+                free(hdr);
+            }
+        }
+
+        SUITE("verify.c has validation logic");
+        {
+            char *src = read_file("test_output/verify.c");
+            TESTEX("verify.c created", src != NULL);
+            if (src) {
+                TESTEX("checks opcode range", strstr(src, "OP_COUNT") != NULL);
+                TESTEX("checks instruction fits", strstr(src, "extends past end") != NULL);
+                TESTEX("checks PUSH_CONST index", strstr(src, "PUSH_CONST index out of range") != NULL);
+                TESTEX("uses instruction_sizes", strstr(src, "instruction_sizes") != NULL);
+                free(src);
+            }
+        }
+
+        remove("test_output/verify.h");
+        remove("test_output/verify.c");
+        vmgen_spec_free(&spec);
+    }
+
+    {
+        /* Test with jump instructions */
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        vmgen_instr_t *jmp = &spec.instructions[spec.instruction_count++];
+        snprintf(jmp->name, VMGEN_MAX_NAME, "JUMP");
+        jmp->operand_count = 1;
+        snprintf(jmp->operands[0].name, VMGEN_MAX_NAME, "offset");
+        jmp->operands[0].type = VMGEN_OPERAND_INT16;
+
+        SUITE("Verifier with jump instructions");
+        {
+            MKDIR("test_output");
+            int rc = vmgen_gen_verify(&spec, "test_output");
+            TESTEX("gen_verify with jumps succeeds", rc == 0);
+
+            char *src = read_file("test_output/verify.c");
+            TESTEX("verify.c created", src != NULL);
+            if (src) {
+                TESTEX("checks jump target", strstr(src, "jump target out of range") != NULL);
+                free(src);
+            }
+            remove("test_output/verify.h");
+            remove("test_output/verify.c");
+        }
         vmgen_spec_free(&spec);
     }
 }
