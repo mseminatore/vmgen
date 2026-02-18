@@ -158,6 +158,23 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "} %s_frame_t;\n\n",
         upper, spec->name);
 
+    /* Error handling */
+    vmgen_buf_appendf(&buf,
+        "/* Error codes */\n"
+        "typedef enum {\n"
+        "    %s_ERR_NONE = 0,\n"
+        "    %s_ERR_STACK_OVERFLOW,\n"
+        "    %s_ERR_STACK_UNDERFLOW,\n"
+        "    %s_ERR_UNKNOWN_OPCODE,\n"
+        "    %s_ERR_CONST_OVERFLOW,\n"
+        "    %s_ERR_DIV_BY_ZERO,\n"
+        "    %s_ERR_TYPE_MISMATCH,\n"
+        "} %s_error_t;\n\n"
+        "/* Error handler callback: receives VM pointer, error code, and message */\n"
+        "typedef void (*%s_error_handler_t)(void *vm, %s_error_t err, const char *msg);\n\n",
+        upper, upper, upper, upper, upper, upper, upper,
+        spec->name, spec->name, spec->name);
+
     /* VM state struct */
     vmgen_buf_appendf(&buf,
         "typedef struct %s_vm {\n"
@@ -182,6 +199,12 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         vmgen_buf_appendf(&buf, "    %s_gc_t *gc;\n", spec->name);
     }
 
+    vmgen_buf_appendf(&buf,
+        "    %s_error_t last_error;\n"
+        "    %s_error_handler_t error_handler;\n"
+        "    void *error_userdata;\n",
+        spec->name, spec->name);
+
     vmgen_buf_appendf(&buf, "} %s_vm_t;\n\n", spec->name);
 
     /* API prototypes */
@@ -190,9 +213,11 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "int  %s_vm_run(%s_vm_t *vm, const uint8_t *code, size_t code_len);\n"
         "void %s_vm_push(%s_vm_t *vm, %s_value_t value);\n"
         "%s_value_t %s_vm_pop(%s_vm_t *vm);\n"
-        "int  %s_vm_add_constant(%s_vm_t *vm, %s_value_t value);\n",
+        "int  %s_vm_add_constant(%s_vm_t *vm, %s_value_t value);\n"
+        "void %s_vm_set_error_handler(%s_vm_t *vm, %s_error_handler_t handler, void *userdata);\n",
         spec->name, spec->name,
         spec->name, spec->name,
+        spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name);
@@ -300,12 +325,16 @@ static void emit_switch_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
     }
 
     vmgen_buf_appendf(buf,
-        "        default:\n"
-        "            fprintf(stderr, \"unknown opcode %%d at ip %%zu\\n\",\n"
-        "                    opcode, vm->ip - 1);\n"
+        "        default: {\n"
+        "            char msg[64];\n"
+        "            snprintf(msg, sizeof(msg), \"unknown opcode %%d at ip %%zu\",\n"
+        "                     opcode, vm->ip - 1);\n"
+        "            %s_vm_error(vm, %s_ERR_UNKNOWN_OPCODE, msg);\n"
         "            return -1;\n"
         "        }\n"
-        "    }\n");
+        "        }\n"
+        "    }\n",
+        spec->name, upper);
 }
 
 
@@ -439,14 +468,16 @@ static void emit_fnptr_loop(vmgen_buf_t *buf, const vmgen_spec_t *spec,
 
     vmgen_buf_appendf(buf,
         "        if (opcode >= %s_OP_COUNT) {\n"
-        "            fprintf(stderr, \"unknown opcode %%d at ip %%zu\\n\",\n"
-        "                    opcode, vm->ip - 1);\n"
+        "            char msg[64];\n"
+        "            snprintf(msg, sizeof(msg), \"unknown opcode %%d at ip %%zu\",\n"
+        "                     opcode, vm->ip - 1);\n"
+        "            %s_vm_error(vm, %s_ERR_UNKNOWN_OPCODE, msg);\n"
         "            return -1;\n"
         "        }\n"
         "        int rc = %s_dispatch_table[opcode](vm);\n"
         "        if (rc != 0) return rc;\n"
         "    }\n",
-        upper, spec->name);
+        upper, spec->name, upper, spec->name);
 }
 
 static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
@@ -474,24 +505,48 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
 
     emit_read_macros(&buf);
 
+    /* Default error handler and helper */
+    vmgen_buf_appendf(&buf,
+        "static void %s_default_error_handler(void *vm, %s_error_t err, const char *msg) {\n"
+        "    (void)vm; (void)err;\n"
+        "    fprintf(stderr, \"%%s\\n\", msg);\n"
+        "}\n\n"
+        "static void %s_vm_error(%s_vm_t *vm, %s_error_t err, const char *msg) {\n"
+        "    vm->last_error = err;\n"
+        "    vm->running = 0;\n"
+        "    if (vm->error_handler) {\n"
+        "        vm->error_handler(vm->error_userdata ? vm->error_userdata : vm, err, msg);\n"
+        "    } else {\n"
+        "        %s_default_error_handler(vm, err, msg);\n"
+        "    }\n"
+        "}\n\n"
+        "void %s_vm_set_error_handler(%s_vm_t *vm, %s_error_handler_t handler, void *userdata) {\n"
+        "    vm->error_handler = handler;\n"
+        "    vm->error_userdata = userdata;\n"
+        "}\n\n",
+        spec->name, spec->name,
+        spec->name, spec->name, spec->name,
+        spec->name,
+        spec->name, spec->name, spec->name);
+
     /* Stack operations */
     vmgen_buf_appendf(&buf,
         "void %s_vm_push(%s_vm_t *vm, %s_value_t value) {\n"
         "    if (vm->sp >= %d) {\n"
-        "        fprintf(stderr, \"stack overflow\\n\");\n"
-        "        vm->running = 0;\n"
+        "        %s_vm_error(vm, %s_ERR_STACK_OVERFLOW, \"stack overflow\");\n"
         "        return;\n"
         "    }\n"
         "    vm->stack[vm->sp++] = value;\n"
         "}\n\n",
-        spec->name, spec->name, spec->name, spec->stack.max_depth);
+        spec->name, spec->name, spec->name, spec->stack.max_depth,
+        spec->name, upper);
 
     vmgen_buf_appendf(&buf,
         "%s_value_t %s_vm_pop(%s_vm_t *vm) {\n"
         "    if (vm->sp <= 0) {\n"
-        "        fprintf(stderr, \"stack underflow\\n\");\n"
-        "        vm->running = 0;\n",
-        spec->name, spec->name, spec->name);
+        "        %s_vm_error(vm, %s_ERR_STACK_UNDERFLOW, \"stack underflow\");\n",
+        spec->name, spec->name, spec->name,
+        spec->name, upper);
 
     if (spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION) {
         vmgen_buf_appendf(&buf,
@@ -516,14 +571,15 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
     vmgen_buf_appendf(&buf,
         "int %s_vm_add_constant(%s_vm_t *vm, %s_value_t value) {\n"
         "    if (vm->constants.count >= %s_MAX_CONSTANTS) {\n"
-        "        fprintf(stderr, \"constant pool overflow\\n\");\n"
+        "        %s_vm_error(vm, %s_ERR_CONST_OVERFLOW, \"constant pool overflow\");\n"
         "        return -1;\n"
         "    }\n"
         "    int index = vm->constants.count;\n"
         "    vm->constants.values[vm->constants.count++] = value;\n"
         "    return index;\n"
         "}\n\n",
-        spec->name, spec->name, spec->name, upper);
+        spec->name, spec->name, spec->name, upper,
+        spec->name, upper);
 
     /* GC root scanning function (mark-sweep only) */
     if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {

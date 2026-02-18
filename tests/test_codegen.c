@@ -1511,4 +1511,50 @@ void test_actions(void) {
         remove("test_output/disasm.c");
         vmgen_spec_free(&spec);
     }
+
+    MODULE("Error Recovery");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+
+        MKDIR("test_output");
+        vmgen_gen_vm(&spec, "test_output");
+
+        SUITE("VM header has error types");
+        {
+            char *hdr = read_file("test_output/vm.h");
+            TESTEX("vm.h created", hdr != NULL);
+            if (hdr) {
+                TESTEX("has error_t enum", strstr(hdr, "testvm_error_t") != NULL);
+                TESTEX("has ERR_STACK_OVERFLOW", strstr(hdr, "TESTVM_ERR_STACK_OVERFLOW") != NULL);
+                TESTEX("has ERR_STACK_UNDERFLOW", strstr(hdr, "TESTVM_ERR_STACK_UNDERFLOW") != NULL);
+                TESTEX("has ERR_UNKNOWN_OPCODE", strstr(hdr, "TESTVM_ERR_UNKNOWN_OPCODE") != NULL);
+                TESTEX("has ERR_DIV_BY_ZERO", strstr(hdr, "TESTVM_ERR_DIV_BY_ZERO") != NULL);
+                TESTEX("has error_handler_t", strstr(hdr, "testvm_error_handler_t") != NULL);
+                TESTEX("has last_error field", strstr(hdr, "last_error") != NULL);
+                TESTEX("has error_handler field", strstr(hdr, "error_handler") != NULL);
+                TESTEX("has set_error_handler", strstr(hdr, "testvm_vm_set_error_handler") != NULL);
+                free(hdr);
+            }
+        }
+
+        SUITE("VM source uses error handler");
+        {
+            char *src = read_file("test_output/vm.c");
+            TESTEX("vm.c created", src != NULL);
+            if (src) {
+                TESTEX("has default handler", strstr(src, "testvm_default_error_handler") != NULL);
+                TESTEX("has vm_error helper", strstr(src, "testvm_vm_error") != NULL);
+                TESTEX("push uses vm_error", strstr(src, "testvm_vm_error(vm, TESTVM_ERR_STACK_OVERFLOW") != NULL);
+                TESTEX("pop uses vm_error", strstr(src, "testvm_vm_error(vm, TESTVM_ERR_STACK_UNDERFLOW") != NULL);
+                TESTEX("no direct fprintf overflow", strstr(src, "fprintf(stderr, \"stack overflow") == NULL);
+                TESTEX("no direct fprintf underflow", strstr(src, "fprintf(stderr, \"stack underflow") == NULL);
+                free(src);
+            }
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
 }
