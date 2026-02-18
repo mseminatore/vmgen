@@ -361,9 +361,10 @@ int vmgen_gen_test(const vmgen_spec_t *spec, const char *output_dir) {
         vmgen_buf_appendf(&buf,
             "static void test_disassembler(void) {\n"
             "    uint8_t code[] = { %s_OP_HALT };\n"
-            "    /* disasm prints to stdout — just verify it doesn't crash */\n"
-            "    %s_disasm(code, sizeof(code));\n"
-            "    TEST_ASSERT(1, \"disassembler did not crash\");\n"
+            "    char out[256];\n"
+            "    int len = %s_disasm_buf(code, sizeof(code), out, sizeof(out));\n"
+            "    TEST_ASSERT(len > 0, \"disasm_buf should produce output\");\n"
+            "    TEST_ASSERT(strstr(out, \"HALT\") != NULL, \"disasm should contain HALT\");\n"
             "}\n\n",
             NAME, spec->name);
     }

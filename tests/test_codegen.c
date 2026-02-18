@@ -249,6 +249,8 @@ void test_codegen(void) {
         TESTEX("disasm.h has guard", strstr(content, "#ifndef TESTVM_DISASM_H") != NULL);
         TESTEX("disasm.h has disasm_instruction", strstr(content, "testvm_disasm_instruction") != NULL);
         TESTEX("disasm.h has disasm", strstr(content, "testvm_disasm") != NULL);
+        TESTEX("disasm.h has disasm_instruction_buf", strstr(content, "testvm_disasm_instruction_buf") != NULL);
+        TESTEX("disasm.h has disasm_buf", strstr(content, "testvm_disasm_buf") != NULL);
         free(content);
     }
 
@@ -259,6 +261,8 @@ void test_codegen(void) {
         TESTEX("disasm.c has switch on opcode", strstr(content, "switch (opcode)") != NULL);
         TESTEX("disasm.c has PUSH_CONST case", strstr(content, "TESTVM_OP_PUSH_CONST") != NULL);
         TESTEX("disasm.c has full disasm func", strstr(content, "testvm_disasm(") != NULL);
+        TESTEX("disasm.c has snprintf buf variant", strstr(content, "testvm_disasm_instruction_buf") != NULL);
+        TESTEX("disasm.c has disasm_buf func", strstr(content, "testvm_disasm_buf") != NULL);
         free(content);
     }
 
