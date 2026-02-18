@@ -9,6 +9,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -33,23 +34,32 @@ jobs:
         run: cmake --build build --config ${{ matrix.build_type }}
 
       - name: Run tests
+        if: always() && steps.build.outcome == 'success'
+        id: tests
         run: ctest --test-dir build --build-config ${{ matrix.build_type }} --output-on-failure --timeout 120
 
       - name: Generate from YAML spec
+        if: always() && steps.build.outcome == 'success'
+        id: generate
         run: |
           cmake -E make_directory test_output
           cmake --build build --config ${{ matrix.build_type }} --target vmgen
         shell: bash
 
       - name: Run vmgen on full.yaml
+        if: always() && steps.generate.outcome == 'success'
+        id: vmgen_run
         run: ./build/${{ matrix.build_type == 'Debug' && 'Debug/' || '' }}vmgen${{ runner.os == 'Windows' && '.exe' || '' }} specs/full.yaml -o test_output
         shell: bash
 
       - name: Compile generated code
+        if: always() && steps.vmgen_run.outcome == 'success'
+        id: compile_gen
         run: |
           cmake -B test_output/build -S test_output -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           cmake --build test_output/build --config ${{ matrix.build_type }}
         shell: bash
 
       - name: Run generated tests
+        if: always() && steps.compile_gen.outcome == 'success'
         run: ctest --test-dir test_output/build --build-config ${{ matrix.build_type }} --output-on-failure --timeout 30
