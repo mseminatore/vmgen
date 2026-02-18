@@ -5,6 +5,12 @@
 #include <string.h>
 #include <ctype.h>
 
+#ifdef _MSC_VER
+#define vmgen_stricmp _stricmp
+#else
+#define vmgen_stricmp strcasecmp
+#endif
+
 /* Helper: uppercase name into buf */
 static void to_upper(const char *src, char *dst, size_t max) {
     size_t i;
@@ -16,7 +22,7 @@ static void to_upper(const char *src, char *dst, size_t max) {
 /* Find an instruction by name (case-insensitive), return its opcode index or -1 */
 static int find_instr(const vmgen_spec_t *spec, const char *name) {
     for (int i = 0; i < spec->instruction_count; i++) {
-        if (_stricmp(spec->instructions[i].name, name) == 0)
+        if (vmgen_stricmp(spec->instructions[i].name, name) == 0)
             return i;
     }
     return -1;

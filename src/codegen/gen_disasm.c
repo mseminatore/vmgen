@@ -24,15 +24,6 @@ static const char *printf_fmt_for(vmgen_operand_type_t type) {
     return "%u";
 }
 
-static int operand_size(vmgen_operand_type_t type) {
-    switch (type) {
-    case VMGEN_OPERAND_UINT8:  case VMGEN_OPERAND_INT8:  return 1;
-    case VMGEN_OPERAND_UINT16: case VMGEN_OPERAND_INT16: return 2;
-    case VMGEN_OPERAND_UINT32: case VMGEN_OPERAND_INT32: return 4;
-    }
-    return 1;
-}
-
 static const char *c_read_expr(vmgen_operand_type_t type) {
     switch (type) {
     case VMGEN_OPERAND_UINT8:
