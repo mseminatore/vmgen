@@ -18,6 +18,7 @@ standalone C implementation of that VM.
 - **Error recovery** — configurable error handler callbacks with error codes
 - **Debug stepping** — single-step execution, breakpoints, instruction callbacks
 - **Bytecode verifier** — static validation of bytecode before execution
+- **Bytecode optimizer** — constant folding, dead code elimination, peephole optimization
 - **Source line mapping** — bytecode offset → source line lookup
 - **Bytecode binary format** — save/load bytecode with typed constant pool
 - **Generated tooling** — assembler, disassembler (stdout + buffer API), and debug tracing
@@ -60,6 +61,7 @@ This generates a complete C project in `output/` with:
 | `bytecode.h` / `bytecode.c` | Binary bytecode save/load with typed constants |
 | `linemap.h` / `linemap.c` | Bytecode offset → source line mapping |
 | `verify.h` / `verify.c` | Static bytecode validation (opcodes, bounds, jumps) |
+| `optimizer.h` / `optimizer.c` | Bytecode optimizer (constant folding, dead code, peephole) |
 | `test_vm.c` | Generated smoke tests for the VM |
 | `CMakeLists.txt` | Build configuration for the generated VM |
 | `<name>.h` | Single-header amalgamation (all code in one file) |
@@ -675,6 +677,35 @@ myvm_verify_free(&result);
 - Each instruction fits within code bounds
 - `PUSH_CONST` indices are within the constant pool
 - Jump targets are within code bounds
+
+### Bytecode Optimizer
+
+Optimize bytecode in-place with three passes:
+
+```c
+myvm_opt_stats_t stats;
+int total = myvm_optimize(code, code_len, &constants, &stats);
+
+printf("Folded %d constants, eliminated %d dead bytes, %d peephole opts\n",
+       stats.constants_folded, stats.dead_code_bytes, stats.peephole_opts);
+
+/* Optional: compact by stripping NOP bytes */
+size_t new_len = myvm_optimize_strip_nops(code, code_len);
+```
+
+**Optimization passes:**
+
+| Pass | Description |
+|------|-------------|
+| Constant folding | `PUSH_CONST X, PUSH_CONST Y, ADD` → `PUSH_CONST Z` (adds result to pool) |
+| Dead code elimination | NOP-fills unreachable bytes after `HALT` / `RETURN` |
+| Peephole | Removes useless `PUSH_CONST` + `POP` sequences |
+
+Replaced instructions are filled with `MYVM_OP_NOP` (`0xFE`) bytes, preserving all
+offsets. The optional `strip_nops` pass compacts the bytecode and patches jump targets.
+
+Only passes relevant to the spec are emitted — e.g., constant folding is omitted if
+the spec has no arithmetic opcodes.
 
 ### Single-Header Amalgamation
 
