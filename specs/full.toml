@@ -1,0 +1,110 @@
+[vm]
+name = "fullvm"
+version = "2.0"
+dispatch = "auto"
+types = ["int64", "double", "bool", "string", "object"]
+constants = ["int64", "double", "string"]
+
+[vm.stack]
+type = "dynamic"
+max_depth = 4096
+value_type = "tagged_union"
+
+[vm.features]
+interned_strings = true
+closures = true
+coroutines = true
+debug_tracing = true
+nan_boxing = false
+
+[vm.features.garbage_collection]
+enabled = true
+strategy = "mark_sweep"
+
+[vm.features.modules]
+enabled = true
+loading = "dynamic"
+
+[[vm.instructions]]
+name = "PUSH_CONST"
+description = "Push constant at index onto stack"
+action = "push constants[$index]"
+operands = [{name = "index", type = "uint16"}]
+
+[[vm.instructions]]
+name = "POP"
+description = "Pop top of stack"
+action = "pop _"
+operands = []
+
+[[vm.instructions]]
+name = "ADD"
+description = "Pop two values, push their sum"
+action = "pop b; pop a; push a + b"
+stack_effect = -1
+operands = []
+
+[[vm.instructions]]
+name = "SUB"
+description = "Pop two values, push their difference"
+action = "pop b; pop a; push a - b"
+stack_effect = -1
+operands = []
+
+[[vm.instructions]]
+name = "MUL"
+description = "Pop two values, push their product"
+action = "pop b; pop a; push a * b"
+stack_effect = -1
+operands = []
+
+[[vm.instructions]]
+name = "DIV"
+description = "Pop two values, push their quotient"
+action = "pop b; pop a; push a / b"
+stack_effect = -1
+operands = []
+
+[[vm.instructions]]
+name = "EQ"
+description = "Pop two values, push true if equal"
+action = "pop b; pop a; push a == b"
+stack_effect = -1
+operands = []
+
+[[vm.instructions]]
+name = "LT"
+description = "Pop two values, push true if a < b"
+action = "pop b; pop a; push a < b"
+stack_effect = -1
+operands = []
+
+[[vm.instructions]]
+name = "JUMP"
+description = "Unconditional jump by offset"
+action = "jump $offset"
+operands = [{name = "offset", type = "int16"}]
+
+[[vm.instructions]]
+name = "JUMP_IF_FALSE"
+description = "Jump by offset if top of stack is false"
+action = "pop a; jump_if_zero a $offset"
+operands = [{name = "offset", type = "int16"}]
+
+[[vm.instructions]]
+name = "CALL"
+description = "Call function at index with arity arguments"
+action = "call $func_index $arity"
+operands = [{name = "func_index", type = "uint16"}, {name = "arity", type = "uint8"}]
+
+[[vm.instructions]]
+name = "RETURN"
+description = "Return from current function"
+action = "return"
+operands = []
+
+[[vm.instructions]]
+name = "HALT"
+description = "Stop execution"
+action = "halt"
+operands = []

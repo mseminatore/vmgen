@@ -20,12 +20,32 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libyaml)
 
+# --- tomlc99 (fetched via FetchContent) ---
+FetchContent_Declare(
+    tomlc99
+    GIT_REPOSITORY https://github.com/cktan/tomlc99.git
+    GIT_TAG        master
+)
+FetchContent_MakeAvailable(tomlc99)
+
+# tomlc99 doesn't provide a CMake target; create one
+add_library(tomlc99_lib STATIC
+    ${tomlc99_SOURCE_DIR}/toml.c
+)
+target_include_directories(tomlc99_lib PUBLIC ${tomlc99_SOURCE_DIR})
+if(MSVC)
+    target_compile_options(tomlc99_lib PRIVATE /W3 /wd4996)
+else()
+    target_compile_options(tomlc99_lib PRIVATE -w)
+endif()
+
 # --- vmgen executable ---
 add_executable(vmgen
     src/main.c
     src/util/buffer.c
     src/spec/model.c
     src/spec/parser.c
+    src/spec/parser_toml.c
     src/spec/validate.c
     src/codegen/emit.c
     src/codegen/gen_opcodes.c
@@ -49,7 +69,7 @@ target_include_directories(vmgen PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(vmgen PRIVATE yaml)
+target_link_libraries(vmgen PRIVATE yaml tomlc99_lib)
 
 # --- Tests (testy) ---
 enable_testing()
@@ -62,6 +82,7 @@ add_executable(vmgen_tests
     src/util/buffer.c
     src/spec/model.c
     src/spec/parser.c
+    src/spec/parser_toml.c
     src/spec/validate.c
     src/codegen/emit.c
     src/codegen/gen_opcodes.c
@@ -86,7 +107,7 @@ target_include_directories(vmgen_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/testy
 )
 
-target_link_libraries(vmgen_tests PRIVATE yaml)
+target_link_libraries(vmgen_tests PRIVATE yaml tomlc99_lib)
 
 # vmgen_spec_t is ~127KB (instructions[256]); tests create several on the stack.
 # Increase stack size to 4MB so Debug builds don't overflow.

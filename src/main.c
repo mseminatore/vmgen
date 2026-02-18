@@ -3,6 +3,7 @@
 #include <string.h>
 #include "spec/model.h"
 #include "spec/parser.h"
+#include "spec/parser_toml.h"
 #include "spec/validate.h"
 #include "codegen/emit.h"
 #include "codegen/gen_opcodes.h"
@@ -68,11 +69,17 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* Parse the spec */
+    /* Parse the spec (detect format by file extension) */
     vmgen_spec_t spec;
     vmgen_spec_init(&spec);
 
-    int rc = vmgen_parse_spec(spec_path, &spec);
+    int rc;
+    const char *ext = strrchr(spec_path, '.');
+    if (ext && (strcmp(ext, ".toml") == 0 || strcmp(ext, ".TOML") == 0)) {
+        rc = vmgen_parse_spec_toml(spec_path, &spec);
+    } else {
+        rc = vmgen_parse_spec(spec_path, &spec);
+    }
     if (rc != 0) {
         fprintf(stderr, "Error: failed to parse spec '%s'\n", spec_path);
         vmgen_spec_free(&spec);
