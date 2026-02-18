@@ -16,6 +16,7 @@
 #include "codegen/gen_test.h"
 #include "codegen/gen_linemap.h"
 #include "codegen/gen_verify.h"
+#include "codegen/gen_optimizer.h"
 #include "codegen/gen_single_header.h"
 #include "codegen/action_parser.h"
 #include "codegen/action_emit.h"
@@ -1711,6 +1712,106 @@ void test_actions(void) {
             remove("test_output/verify.h");
             remove("test_output/verify.c");
         }
+        vmgen_spec_free(&spec);
+    }
+}
+
+void test_optimizer(void) {
+    MODULE("Bytecode Optimizer");
+    {
+        /* Need a spec with actions for optimizer to detect arithmetic/terminal patterns */
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+
+        /* Add action strings (action is a heap-allocated char*, not a fixed buffer) */
+        spec.instructions[0].action = vmgen_strdup("push constants[$index]");
+        spec.instructions[1].action = vmgen_strdup("pop b; pop a; push a + b");
+        spec.instructions[2].action = vmgen_strdup("halt");
+
+        /* Add POP instruction */
+        vmgen_instr_t *pop_instr = &spec.instructions[spec.instruction_count++];
+        snprintf(pop_instr->name, VMGEN_MAX_NAME, "POP");
+        pop_instr->operand_count = 0;
+        pop_instr->action = vmgen_strdup("pop a");
+
+        /* Add RETURN instruction */
+        vmgen_instr_t *ret = &spec.instructions[spec.instruction_count++];
+        snprintf(ret->name, VMGEN_MAX_NAME, "RETURN");
+        ret->operand_count = 0;
+        ret->action = vmgen_strdup("return");
+
+        /* Add SUB instruction */
+        vmgen_instr_t *sub = &spec.instructions[spec.instruction_count++];
+        snprintf(sub->name, VMGEN_MAX_NAME, "SUB");
+        sub->operand_count = 0;
+        sub->action = vmgen_strdup("pop b; pop a; push a - b");
+
+        /* Add JUMP instruction */
+        vmgen_instr_t *jmp = &spec.instructions[spec.instruction_count++];
+        snprintf(jmp->name, VMGEN_MAX_NAME, "JUMP");
+        jmp->operand_count = 1;
+        snprintf(jmp->operands[0].name, VMGEN_MAX_NAME, "offset");
+        jmp->operands[0].type = VMGEN_OPERAND_INT16;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_optimizer(&spec, "test_output");
+        TESTEX("gen_optimizer succeeds", rc == 0);
+
+        SUITE("optimizer.h has types and API");
+        {
+            char *hdr = read_file("test_output/optimizer.h");
+            TESTEX("optimizer.h created", hdr != NULL);
+            if (hdr) {
+                TESTEX("has OP_NOP define", strstr(hdr, "OP_NOP") != NULL);
+                TESTEX("has opt_stats_t", strstr(hdr, "testvm_opt_stats_t") != NULL);
+                TESTEX("has optimize func", strstr(hdr, "testvm_optimize(") != NULL);
+                TESTEX("has strip_nops func", strstr(hdr, "testvm_optimize_strip_nops(") != NULL);
+                TESTEX("has constants_folded field", strstr(hdr, "constants_folded") != NULL);
+                TESTEX("has dead_code_bytes field", strstr(hdr, "dead_code_bytes") != NULL);
+                TESTEX("has peephole_opts field", strstr(hdr, "peephole_opts") != NULL);
+                TESTEX("includes opcodes.h", strstr(hdr, "#include \"opcodes.h\"") != NULL);
+                TESTEX("includes vm.h", strstr(hdr, "#include \"vm.h\"") != NULL);
+                free(hdr);
+            }
+        }
+
+        SUITE("optimizer.c has optimization passes");
+        {
+            char *src = read_file("test_output/optimizer.c");
+            TESTEX("optimizer.c created", src != NULL);
+            if (src) {
+                /* Constant folding */
+                TESTEX("has fold_constants", strstr(src, "fold_constants") != NULL);
+                TESTEX("checks PUSH_CONST for folding", strstr(src, "OP_PUSH_CONST") != NULL);
+                TESTEX("checks ADD for folding", strstr(src, "OP_ADD") != NULL);
+                TESTEX("checks SUB for folding", strstr(src, "OP_SUB") != NULL);
+
+                /* Dead code elimination */
+                TESTEX("has eliminate_dead_code", strstr(src, "eliminate_dead_code") != NULL);
+                TESTEX("checks HALT terminal", strstr(src, "OP_HALT") != NULL);
+                TESTEX("checks RETURN terminal", strstr(src, "OP_RETURN") != NULL);
+
+                /* Peephole */
+                TESTEX("has peephole", strstr(src, "peephole") != NULL);
+                TESTEX("checks POP for peephole", strstr(src, "OP_POP") != NULL);
+
+                /* NOP fill */
+                TESTEX("has nop_fill", strstr(src, "nop_fill") != NULL);
+                TESTEX("uses OP_NOP", strstr(src, "OP_NOP") != NULL);
+
+                /* NOP strip */
+                TESTEX("has offset map", strstr(src, "offmap") != NULL);
+                TESTEX("patches JUMP offsets", strstr(src, "OP_JUMP") != NULL);
+
+                /* Includes stdlib for malloc */
+                TESTEX("includes stdlib.h", strstr(src, "#include <stdlib.h>") != NULL);
+
+                free(src);
+            }
+        }
+
+        remove("test_output/optimizer.h");
+        remove("test_output/optimizer.c");
         vmgen_spec_free(&spec);
     }
 }

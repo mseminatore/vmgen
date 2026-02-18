@@ -65,6 +65,7 @@ add_executable(vmgen
     src/codegen/gen_test.c
     src/codegen/gen_linemap.c
     src/codegen/gen_verify.c
+    src/codegen/gen_optimizer.c
     src/codegen/gen_single_header.c
 )
 
@@ -105,6 +106,7 @@ add_executable(vmgen_tests
     src/codegen/gen_test.c
     src/codegen/gen_linemap.c
     src/codegen/gen_verify.c
+    src/codegen/gen_optimizer.c
     src/codegen/gen_single_header.c
 )
 
@@ -115,12 +117,12 @@ target_include_directories(vmgen_tests PRIVATE
 
 target_link_libraries(vmgen_tests PRIVATE yaml tomlc99_lib)
 
-# vmgen_spec_t is ~127KB (instructions[256]); tests create several on the stack.
-# Increase stack size to 4MB so Debug builds don't overflow.
+# vmgen_spec_t is ~127KB (instructions[256]); tests create 30+ on the stack.
+# Increase stack size to 8MB so builds don't overflow.
 if(MSVC)
     target_link_options(vmgen_tests PRIVATE /STACK:8388608)
 else()
-    target_link_options(vmgen_tests PRIVATE -Wl,-z,stacksize=4194304)
+    target_link_options(vmgen_tests PRIVATE -Wl,-z,stacksize=8388608)
 endif()
 
 add_test(NAME vmgen_tests COMMAND vmgen_tests)
