@@ -1,0 +1,231 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/mseminatore/vmgen/blob/master/schemas/vmgen-spec.schema.json",
+  "title": "VMGen Specification",
+  "description": "Schema for VMGen virtual machine specification files (.yaml/.yml)",
+  "type": "object",
+  "required": ["vm"],
+  "additionalProperties": false,
+  "properties": {
+    "vm": {
+      "type": "object",
+      "description": "Root VM configuration",
+      "required": ["name", "version", "stack", "instructions"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "VM name — used as prefix for all generated types and functions (e.g., 'myvm' → myvm_vm_t, myvm_vm_init)",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "examples": ["minimal", "calc", "fullvm"]
+        },
+        "version": {
+          "type": "string",
+          "description": "VM version string, embedded in generated headers and bytecode format",
+          "examples": ["1.0", "0.1.0"]
+        },
+        "stack": {
+          "$ref": "#/$defs/stack"
+        },
+        "types": {
+          "type": "array",
+          "description": "Value types the VM understands. Determines tagged union variants.",
+          "items": {
+            "type": "string",
+            "enum": ["int64", "double", "bool", "string", "object"]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "examples": [["int64"], ["int64", "double", "bool", "string", "object"]]
+        },
+        "features": {
+          "$ref": "#/$defs/features"
+        },
+        "dispatch": {
+          "type": "string",
+          "description": "Instruction dispatch strategy",
+          "enum": ["switch", "fnptr", "threaded", "auto"],
+          "default": "switch"
+        },
+        "instructions": {
+          "type": "array",
+          "description": "Instruction set definitions. Each entry defines one opcode.",
+          "items": {
+            "$ref": "#/$defs/instruction"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "constants": {
+          "type": "array",
+          "description": "Constant pool types supported by the bytecode format",
+          "items": {
+            "type": "string",
+            "enum": ["int64", "double", "string"]
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stack": {
+      "type": "object",
+      "description": "Stack configuration",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Stack allocation strategy",
+          "enum": ["fixed", "dynamic"],
+          "default": "fixed"
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Maximum stack depth (number of value slots)",
+          "minimum": 16,
+          "maximum": 65536,
+          "default": 256
+        },
+        "value_type": {
+          "type": "string",
+          "description": "Type of each stack slot",
+          "enum": ["int64", "double", "tagged_union"],
+          "default": "tagged_union"
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "description": "Optional runtime feature toggles",
+      "additionalProperties": false,
+      "properties": {
+        "interned_strings": {
+          "type": "boolean",
+          "description": "Enable FNV-1a string interning table. Requires 'string' in types.",
+          "default": false
+        },
+        "garbage_collection": {
+          "type": "object",
+          "description": "Garbage collection configuration",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable garbage collection for heap objects",
+              "default": false
+            },
+            "strategy": {
+              "type": "string",
+              "description": "GC strategy: mark-and-sweep (tracing) or reference counting",
+              "enum": ["mark_sweep", "refcount"],
+              "default": "mark_sweep"
+            }
+          }
+        },
+        "closures": {
+          "type": "boolean",
+          "description": "Enable Lua-style closures with by-reference upvalue capture",
+          "default": false
+        },
+        "modules": {
+          "type": "object",
+          "description": "Module/import system configuration",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable the module system",
+              "default": false
+            },
+            "loading": {
+              "type": "string",
+              "description": "Module loading strategy",
+              "enum": ["static", "dynamic", "combined"],
+              "default": "dynamic"
+            }
+          }
+        },
+        "coroutines": {
+          "type": "boolean",
+          "description": "Enable cooperative fiber-based coroutines",
+          "default": false
+        },
+        "debug_tracing": {
+          "type": "boolean",
+          "description": "Emit debug trace output for each instruction during execution",
+          "default": false
+        },
+        "nan_boxing": {
+          "type": "boolean",
+          "description": "Enable NaN-boxed value representation (not yet implemented)",
+          "default": false
+        }
+      }
+    },
+    "instruction": {
+      "type": "object",
+      "description": "A single opcode definition",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Opcode name (uppercase, used as enum constant: NAME_OP_<name>)",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "examples": ["PUSH_CONST", "ADD", "HALT", "JUMP_IF_FALSE"]
+        },
+        "operands": {
+          "type": "array",
+          "description": "Operand definitions for this instruction",
+          "items": {
+            "$ref": "#/$defs/operand"
+          },
+          "maxItems": 4
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the instruction"
+        },
+        "action": {
+          "type": "string",
+          "description": "Stack-effect DSL string defining the opcode's behavior. Semicolon-separated statements: pop/push/peek/set/jump/halt/call/return. Use $name to reference operands, constants[$expr] for constant pool access.",
+          "examples": [
+            "pop b; pop a; push a + b",
+            "push constants[$index]",
+            "pop a; jump_if_zero a $offset",
+            "halt"
+          ]
+        },
+        "action_c": {
+          "type": "string",
+          "description": "Inline C code for the instruction body. The 'vm' pointer and decoded operand locals are available. Use for operations the DSL cannot express."
+        },
+        "stack_effect": {
+          "type": "integer",
+          "description": "Expected net stack depth change (pops - pushes). VMGen warns if this doesn't match the computed effect from the action DSL.",
+          "examples": [-1, 0, 1]
+        }
+      }
+    },
+    "operand": {
+      "type": "object",
+      "description": "An instruction operand",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Operand name (used as C local variable in generated code and $name in DSL)",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "examples": ["index", "offset", "arity", "func_index"]
+        },
+        "type": {
+          "type": "string",
+          "description": "Operand data type and byte size",
+          "enum": ["uint8", "uint16", "int16", "uint32"]
+        }
+      }
+    }
+  }
+}

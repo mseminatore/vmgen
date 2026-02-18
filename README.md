@@ -1,23 +1,30 @@
 # VMGen — VM Generator
 
-A tool that reads a declarative YAML specification describing a virtual machine's
+A tool that reads a declarative YAML or TOML specification describing a virtual machine's
 instruction set, value types, and runtime features, then emits a complete,
 standalone C implementation of that VM.
 
 ## Features
 
-- **Declarative YAML spec** — define your VM's instruction set, types, and features
+- **Declarative spec** — YAML or TOML input describing your VM's instruction set, types, and features
 - **Action DSL** — describe opcode semantics with `pop`/`push`/`peek`/`jump` notation
 - **Multiple dispatch strategies** — switch, function-pointer table, or computed gotos
 - **Optional interned strings** — with FNV-1a hash table
-- **Optional garbage collection** — mark-and-sweep with GC-safe opcode execution
+- **Optional garbage collection** — mark-and-sweep or reference counting
 - **Optional closures** — Lua-style by-reference upvalue capture
-- **Optional modules** — static, dynamic, or combined import system
+- **Optional modules** — static, dynamic, or combined import system with circular import detection
 - **Optional coroutines** — cooperative fiber-based concurrency
 - **Native function interface** — register C functions callable from bytecode
-- **Generated tooling** — assembler, disassembler, and debug tracing
+- **Error recovery** — configurable error handler callbacks with error codes
+- **Debug stepping** — single-step execution, breakpoints, instruction callbacks
+- **Bytecode verifier** — static validation of bytecode before execution
+- **Source line mapping** — bytecode offset → source line lookup
+- **Bytecode binary format** — save/load bytecode with typed constant pool
+- **Generated tooling** — assembler, disassembler (stdout + buffer API), and debug tracing
+- **Generated test harness** — smoke tests for the generated VM
 - **Generated build system** — CMakeLists.txt for the output VM
-- **Portable output** — generated C compiles on GCC, Clang, and MSVC
+- **Single-header option** — amalgamated `.h` file for easy embedding
+- **Portable output** — generated C compiles on GCC, Clang, and MSVC with 0 warnings
 
 ## Building
 
@@ -29,7 +36,11 @@ cmake --build build
 ## Running
 
 ```bash
+# From YAML spec
 ./build/vmgen specs/minimal.yaml -o output/
+
+# From TOML spec
+./build/vmgen specs/full.toml -o output/
 ```
 
 This generates a complete C project in `output/` with:
@@ -37,16 +48,21 @@ This generates a complete C project in `output/` with:
 | File | Description |
 |------|-------------|
 | `opcodes.h` | Opcode enum, name table, operand counts, instruction sizes |
-| `vm.h` / `vm.c` | VM struct, stack, constant pool, dispatch loop |
+| `vm.h` / `vm.c` | VM struct, stack, constant pool, dispatch loop, error handler, debug stepping |
 | `assembler.h` / `assembler.c` | Text mnemonic → bytecode assembler |
-| `disasm.h` / `disasm.c` | Bytecode → text disassembler |
+| `disasm.h` / `disasm.c` | Bytecode → text disassembler (stdout + buffer API) |
 | `native.h` / `native.c` | Native C function registration and invocation |
 | `strings.h` / `strings.c` | Interned string table (if enabled) |
-| `gc.h` / `gc.c` | Garbage collector (if enabled) |
+| `gc.h` / `gc.c` | Garbage collector — mark-and-sweep or refcount (if enabled) |
 | `closures.h` / `closures.c` | Closure/upvalue support (if enabled) |
-| `modules.h` / `modules.c` | Module/import system (if enabled) |
+| `modules.h` / `modules.c` | Module/import system with circular import detection (if enabled) |
 | `fibers.h` / `fibers.c` | Coroutine/fiber support (if enabled) |
+| `bytecode.h` / `bytecode.c` | Binary bytecode save/load with typed constants |
+| `linemap.h` / `linemap.c` | Bytecode offset → source line mapping |
+| `verify.h` / `verify.c` | Static bytecode validation (opcodes, bounds, jumps) |
+| `test_vm.c` | Generated smoke tests for the VM |
 | `CMakeLists.txt` | Build configuration for the generated VM |
+| `<name>.h` | Single-header amalgamation (all code in one file) |
 
 ## Testing
 
@@ -55,6 +71,10 @@ cmake --build build
 cd build && ctest --output-on-failure
 ```
 
+This runs both:
+- **Unit tests** (533 tests) — spec parsing, validation, code generation, action DSL
+- **E2E integration tests** (4 tests) — generate → compile → run for each spec (minimal, calculator, full YAML, full TOML)
+
 ## Project Structure
 
 ```
@@ -62,21 +82,23 @@ vmgen/
 ├── CMakeLists.txt          # Build configuration
 ├── src/
 │   ├── main.c              # CLI entry point
-│   ├── spec/               # YAML parsing and spec model
-│   ├── codegen/            # C code generation
-│   └── util/               # Shared utilities
-├── specs/                  # Example VM specifications
-├── tests/                  # Test suite (testy framework)
-└── third_party/            # Vendored dependencies
+│   ├── spec/               # YAML/TOML parsing and spec model
+│   ├── codegen/            # C code generation (16 generators)
+│   └── util/               # Shared utilities (buffer)
+├── specs/                  # Example VM specifications (.yaml, .toml)
+├── examples/               # Sample assembly programs with walkthrough
+├── tests/                  # Test suite (testy framework + CTest E2E)
+└── third_party/            # Vendored dependencies (testy)
 ```
 
 ---
 
 ## Spec Format
 
-The YAML spec is the single input to VMGen. It describes the VM name, stack
-layout, types, optional features, dispatch strategy, and the full instruction
-set.
+The spec is the single input to VMGen. It can be **YAML** or **TOML** — the
+format is auto-detected by file extension (`.yaml`/`.yml` or `.toml`).
+It describes the VM name, stack layout, types, optional features, dispatch
+strategy, and the full instruction set.
 
 ### Minimal Example
 
@@ -126,6 +148,50 @@ vm:
     - int64
 ```
 
+### TOML Equivalent
+
+The same spec in TOML:
+
+```toml
+[vm]
+name = "minimal"
+version = "1.0"
+types = ["int64"]
+dispatch = "switch"
+constants = ["int64"]
+
+[vm.stack]
+type = "fixed"
+max_depth = 256
+value_type = "int64"
+
+[vm.features]
+interned_strings = false
+closures = false
+coroutines = false
+debug_tracing = false
+
+[vm.features.garbage_collection]
+enabled = false
+
+[vm.features.modules]
+enabled = false
+
+[[vm.instructions]]
+name = "PUSH_CONST"
+description = "Push constant at index onto stack"
+action = "push constants[$index]"
+
+[[vm.instructions.operands]]
+name = "index"
+type = "uint16"
+
+[[vm.instructions]]
+name = "HALT"
+description = "Stop execution"
+action = "halt"
+```
+
 ### Stack Configuration
 
 | Field | Values | Description |
@@ -156,10 +222,10 @@ vm:
 | Feature | Description |
 |---------|-------------|
 | `interned_strings` | FNV-1a hash table for string deduplication |
-| `garbage_collection.enabled` | Enable mark-and-sweep GC with object headers |
-| `garbage_collection.strategy` | `"mark_sweep"` (ref counting planned) |
+| `garbage_collection.enabled` | Enable GC with object headers |
+| `garbage_collection.strategy` | `"mark_sweep"` or `"refcount"` |
 | `closures` | Lua-style upvalue capture (open on stack, closed on heap) |
-| `modules.enabled` | Module/import system |
+| `modules.enabled` | Module/import system with circular import detection |
 | `modules.loading` | `"static"`, `"dynamic"`, or `"combined"` |
 | `coroutines` | Cooperative fiber-based concurrency (own stack per fiber) |
 | `debug_tracing` | Emit debug trace output during instruction execution |
@@ -347,8 +413,10 @@ myvm_native_table_free(&natives);
 
 ### Garbage Collector
 
-When `garbage_collection.enabled` is `true`, the GC manages heap objects with
-a mark-and-sweep strategy.
+When `garbage_collection.enabled` is `true`, the GC manages heap objects.
+Two strategies are available:
+
+#### Mark-and-Sweep (`strategy: "mark_sweep"`)
 
 ```c
 myvm_gc_t gc;
@@ -371,9 +439,24 @@ myvm_gc_allow(&gc);     // decrements inhibit_count
 myvm_gc_free(&gc);      // free all remaining objects
 ```
 
+#### Reference Counting (`strategy: "refcount"`)
+
+```c
+myvm_gc_t gc;
+myvm_gc_init(&gc);
+
+myvm_obj_t *obj = myvm_gc_alloc(&gc, MYVM_OBJ_STRING, sizeof(myvm_obj_t) + len);
+// obj starts with refcount = 1
+
+myvm_gc_retain(obj);    // increment refcount
+myvm_gc_release(obj);   // decrement; frees if refcount reaches 0
+
+myvm_gc_free(&gc);
+```
+
 The VM struct includes a `myvm_gc_t *gc` pointer (NULL when GC is disabled).
-The dispatch loop automatically inhibits GC during each opcode body to prevent
-collection while popped values are held in C locals.
+The dispatch loop automatically inhibits GC during each opcode body (mark-sweep only)
+to prevent collection while popped values are held in C locals.
 
 ### Interned Strings
 
@@ -465,6 +548,184 @@ myvm_fiber_status_t status = myvm_fiber_status(fiber);
 
 myvm_fiber_free(fiber);
 ```
+
+### Disassembler Buffer API
+
+In addition to printing to stdout, the disassembler can write to a string buffer
+for programmatic use (testing, logging, etc.):
+
+```c
+// Disassemble one instruction into a buffer
+char buf[256];
+size_t next = myvm_disasm_instruction_buf(bytecode, len, offset, buf, sizeof(buf));
+
+// Disassemble entire bytecode into a malloc'd string
+char *text = myvm_disasm_buf(bytecode, len);
+printf("%s", text);
+free(text);
+```
+
+### Error Recovery
+
+The VM includes configurable error handling. By default, errors print to stderr.
+You can install a custom handler:
+
+```c
+// Error codes: MYVM_ERR_STACK_OVERFLOW, MYVM_ERR_STACK_UNDERFLOW,
+//              MYVM_ERR_UNKNOWN_OPCODE, MYVM_ERR_CONST_OVERFLOW,
+//              MYVM_ERR_DIV_BY_ZERO, MYVM_ERR_TYPE_MISMATCH
+
+void my_handler(void *userdata, myvm_error_t err, const char *msg) {
+    fprintf(stderr, "VM error %d: %s\n", err, msg);
+}
+
+myvm_vm_set_error_handler(&vm, my_handler, NULL);
+
+// After running, check the last error:
+if (vm.last_error != MYVM_ERR_NONE) { /* handle */ }
+```
+
+### Debug Stepping
+
+Single-step execution and breakpoints for debugger integration:
+
+```c
+// Prepare VM for stepping
+vm.code = bytecode;
+vm.code_len = len;
+vm.running = 1;
+
+// Execute one instruction at a time
+while (vm.running) {
+    int rc = myvm_vm_step(&vm);
+    if (rc != 0) break;
+    printf("ip=%zu, sp=%d\n", vm.ip, vm.sp);
+}
+
+// Set/clear breakpoints by bytecode offset
+myvm_vm_set_breakpoint(&vm, 0x0010);
+myvm_vm_clear_breakpoint(&vm, 0x0010);
+
+// Instruction callback (called before each step)
+void on_step(void *vm, size_t ip) {
+    printf("about to execute at %zu\n", ip);
+}
+myvm_vm_set_step_callback(&vm, on_step);
+```
+
+### Bytecode Binary Format
+
+Save and load bytecode with a typed constant pool:
+
+```c
+// Save: writes magic header (0x564D4743), version, constants, code
+int rc = myvm_bc_save("program.bc", vm.constants.values, vm.constants.count,
+                       bytecode, bytecode_len);
+
+// Load: reads back constants and code
+myvm_value_t constants[256];
+int const_count;
+uint8_t *code;
+size_t code_len;
+rc = myvm_bc_load("program.bc", constants, &const_count, &code, &code_len);
+
+// ... use code ...
+myvm_bc_free_code(code);
+```
+
+### Source Line Mapping
+
+Map bytecode offsets to source line numbers for debugging:
+
+```c
+myvm_linemap_t map;
+myvm_linemap_init(&map);
+
+// Add entries during compilation (offset → line)
+myvm_linemap_add(&map, 0, 1);    // offset 0 = line 1
+myvm_linemap_add(&map, 3, 2);    // offset 3 = line 2
+myvm_linemap_add(&map, 7, 5);    // offset 7 = line 5
+
+// Query: binary search for largest offset ≤ target
+int line = myvm_linemap_get_line(&map, 4);  // returns 2
+
+myvm_linemap_free(&map);
+```
+
+### Bytecode Verifier
+
+Statically validate bytecode before execution:
+
+```c
+myvm_verify_result_t result;
+myvm_verify_init(&result);
+
+int errors = myvm_verify(bytecode, len, const_count, &result);
+if (errors > 0) {
+    for (int i = 0; i < result.count; i++) {
+        printf("offset %zu: %s\n", result.errors[i].offset,
+               result.errors[i].message);
+    }
+}
+myvm_verify_free(&result);
+```
+
+**Checks performed:**
+- All opcodes are within valid range
+- Each instruction fits within code bounds
+- `PUSH_CONST` indices are within the constant pool
+- Jump targets are within code bounds
+
+### Single-Header Amalgamation
+
+VMGen generates a single-header file (`<name>.h`) containing all declarations
+and implementations. Use it for easy embedding:
+
+```c
+// In exactly one .c file:
+#define MYVM_IMPLEMENTATION
+#include "myvm.h"
+
+// In all other files:
+#include "myvm.h"   // declarations only
+```
+
+---
+
+## Editor Support
+
+A JSON Schema is provided at `schemas/vmgen-spec.schema.json` for validation
+and autocomplete in editors.
+
+### VS Code (YAML)
+
+Add to `.vscode/settings.json`:
+
+```json
+{
+  "yaml.schemas": {
+    "./schemas/vmgen-spec.schema.json": "specs/*.yaml"
+  }
+}
+```
+
+Requires the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml).
+
+### VS Code (inline)
+
+Add a modeline at the top of your YAML spec:
+
+```yaml
+# yaml-language-server: $schema=../../schemas/vmgen-spec.schema.json
+vm:
+  name: "myvm"
+  ...
+```
+
+### Other Editors
+
+Any editor with YAML/JSON Schema support can use the schema file for
+validation, autocomplete, and hover documentation of all spec fields.
 
 ---
 
