@@ -4,13 +4,6 @@ project(vmgen VERSION 0.1.0 LANGUAGES C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Compiler warnings
-if(MSVC)
-    add_compile_options(/W4)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
 # --- libyaml (fetched via FetchContent) ---
 include(FetchContent)
 
@@ -80,6 +73,13 @@ target_include_directories(vmgen PRIVATE
 
 target_link_libraries(vmgen PRIVATE yaml tomlc99_lib)
 
+# Compiler warnings — target-specific to avoid warning noise from dependencies
+if(MSVC)
+    target_compile_options(vmgen PRIVATE /W4)
+else()
+    target_compile_options(vmgen PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 # --- Tests (testy) ---
 enable_testing()
 
@@ -121,6 +121,12 @@ target_include_directories(vmgen_tests PRIVATE
 )
 
 target_link_libraries(vmgen_tests PRIVATE yaml tomlc99_lib)
+
+if(MSVC)
+    target_compile_options(vmgen_tests PRIVATE /W4)
+else()
+    target_compile_options(vmgen_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 # vmgen_spec_t is ~127KB (instructions[256]); tests create 30+ on the stack.
 # Increase stack size to 8MB so builds don't overflow.
