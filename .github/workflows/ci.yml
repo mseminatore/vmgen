@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            generator: "Visual Studio 17 2022"
+            build_type: Debug
+          - os: ubuntu-latest
+            generator: "Unix Makefiles"
+            build_type: Debug
+          - os: macos-latest
+            generator: "Unix Makefiles"
+            build_type: Debug
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build -G "${{ matrix.generator }}" -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }}
+
+      - name: Run tests
+        run: ctest --test-dir build --build-config ${{ matrix.build_type }} --output-on-failure --timeout 120
+
+      - name: Generate from YAML spec
+        run: |
+          cmake -E make_directory test_output
+          cmake --build build --config ${{ matrix.build_type }} --target vmgen
+        shell: bash
+
+      - name: Run vmgen on full.yaml
+        run: ./build/${{ matrix.build_type == 'Debug' && 'Debug/' || '' }}vmgen${{ runner.os == 'Windows' && '.exe' || '' }} specs/full.yaml -o test_output
+        shell: bash
+
+      - name: Compile generated code
+        run: |
+          cmake -B test_output/build -S test_output -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          cmake --build test_output/build --config ${{ matrix.build_type }}
+        shell: bash
+
+      - name: Run generated tests
+        run: ctest --test-dir test_output/build --build-config ${{ matrix.build_type }} --output-on-failure --timeout 30
