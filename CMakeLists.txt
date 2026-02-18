@@ -122,3 +122,43 @@ else()
 endif()
 
 add_test(NAME vmgen_tests COMMAND vmgen_tests)
+
+# End-to-end integration tests: generate → compile → run for each spec
+set(E2E_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e_test.cmake")
+set(E2E_WORKDIR "${CMAKE_CURRENT_BINARY_DIR}/e2e")
+
+add_test(NAME e2e_minimal
+    COMMAND ${CMAKE_COMMAND}
+        -DVMGEN=$<TARGET_FILE:vmgen>
+        -DSPEC=${CMAKE_CURRENT_SOURCE_DIR}/specs/minimal.yaml
+        -DWORKDIR=${E2E_WORKDIR}/minimal
+        -P ${E2E_SCRIPT}
+)
+set_tests_properties(e2e_minimal PROPERTIES TIMEOUT 120 DEPENDS vmgen)
+
+add_test(NAME e2e_calculator
+    COMMAND ${CMAKE_COMMAND}
+        -DVMGEN=$<TARGET_FILE:vmgen>
+        -DSPEC=${CMAKE_CURRENT_SOURCE_DIR}/specs/calculator.yaml
+        -DWORKDIR=${E2E_WORKDIR}/calculator
+        -P ${E2E_SCRIPT}
+)
+set_tests_properties(e2e_calculator PROPERTIES TIMEOUT 120 DEPENDS vmgen)
+
+add_test(NAME e2e_full
+    COMMAND ${CMAKE_COMMAND}
+        -DVMGEN=$<TARGET_FILE:vmgen>
+        -DSPEC=${CMAKE_CURRENT_SOURCE_DIR}/specs/full.yaml
+        -DWORKDIR=${E2E_WORKDIR}/full
+        -P ${E2E_SCRIPT}
+)
+set_tests_properties(e2e_full PROPERTIES TIMEOUT 120 DEPENDS vmgen)
+
+add_test(NAME e2e_full_toml
+    COMMAND ${CMAKE_COMMAND}
+        -DVMGEN=$<TARGET_FILE:vmgen>
+        -DSPEC=${CMAKE_CURRENT_SOURCE_DIR}/specs/full.toml
+        -DWORKDIR=${E2E_WORKDIR}/full_toml
+        -P ${E2E_SCRIPT}
+)
+set_tests_properties(e2e_full_toml PROPERTIES TIMEOUT 120 DEPENDS vmgen)
