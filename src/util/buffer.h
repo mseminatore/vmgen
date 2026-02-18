@@ -13,6 +13,7 @@ typedef struct {
 void vmgen_buf_init(vmgen_buf_t *buf);
 void vmgen_buf_free(vmgen_buf_t *buf);
 void vmgen_buf_append(vmgen_buf_t *buf, const char *str);
+void vmgen_buf_append_len(vmgen_buf_t *buf, const char *str, size_t len);
 void vmgen_buf_appendf(vmgen_buf_t *buf, const char *fmt, ...);
 void vmgen_buf_appendc(vmgen_buf_t *buf, char c);
 int  vmgen_buf_write_file(const vmgen_buf_t *buf, const char *path);

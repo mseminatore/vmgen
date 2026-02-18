@@ -27,6 +27,7 @@
 #include "codegen/gen_build.h"
 #include "codegen/gen_bytecode.h"
 #include "codegen/gen_test.h"
+#include "codegen/gen_single_header.h"
 
 static void print_usage(const char *progname) {
     fprintf(stderr, "Usage: %s <spec.yaml> -o <output_dir>\n", progname);
@@ -188,6 +189,14 @@ int main(int argc, char *argv[]) {
     rc = vmgen_gen_build(&spec, output_dir);
     if (rc != 0) {
         fprintf(stderr, "Error: build file generation failed\n");
+        vmgen_spec_free(&spec);
+        return 1;
+    }
+
+    /* Single-header amalgamation (must run after all other generators) */
+    rc = vmgen_gen_single_header(&spec, output_dir);
+    if (rc != 0) {
+        fprintf(stderr, "Error: single-header generation failed\n");
         vmgen_spec_free(&spec);
         return 1;
     }

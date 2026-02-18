@@ -14,6 +14,7 @@
 #include "codegen/gen_build.h"
 #include "codegen/gen_bytecode.h"
 #include "codegen/gen_test.h"
+#include "codegen/gen_single_header.h"
 #include "codegen/action_parser.h"
 #include "codegen/action_emit.h"
 #include "spec/model.h"
@@ -1445,6 +1446,69 @@ void test_actions(void) {
 
         remove("test_output/vm.h");
         remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    MODULE("Single Header Amalgamation");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        strcpy(spec.name, "testsh");
+        strcpy(spec.version, "1.0");
+        spec.stack.max_depth = 256;
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.type_flags = VMGEN_TYPE_INT64 | VMGEN_TYPE_DOUBLE | VMGEN_TYPE_BOOL;
+
+        vmgen_instr_t *instr = &spec.instructions[spec.instruction_count++];
+        strcpy(instr->name, "HALT");
+        strcpy(instr->description, "Stop execution");
+        instr->action = vmgen_strdup("halt");
+
+        instr = &spec.instructions[spec.instruction_count++];
+        strcpy(instr->name, "PUSH_CONST");
+        strcpy(instr->description, "Push constant");
+        instr->operands[instr->operand_count].type = VMGEN_OPERAND_UINT16;
+        strcpy(instr->operands[instr->operand_count].name, "index");
+        instr->operand_count = 1;
+        instr->action = vmgen_strdup("push constants[$index]");
+
+        MKDIR("test_output");
+
+        SUITE("Generates single header file");
+        {
+            /* Generate all required files first */
+            vmgen_gen_opcodes(&spec, "test_output");
+            vmgen_gen_vm(&spec, "test_output");
+            vmgen_gen_assembler(&spec, "test_output");
+            vmgen_gen_disasm(&spec, "test_output");
+
+            int rc = vmgen_gen_single_header(&spec, "test_output");
+            TESTEX("gen_single_header succeeds", rc == 0);
+
+            char *content = read_file("test_output/testsh.h");
+            TESTEX("single header file created", content != NULL);
+            if (content) {
+                TESTEX("has guard ifndef", strstr(content, "#ifndef TESTSH_SINGLE_HEADER_H") != NULL);
+                TESTEX("has IMPLEMENTATION ifdef", strstr(content, "#ifdef TESTSH_IMPLEMENTATION") != NULL);
+                TESTEX("has vm struct", strstr(content, "testsh_vm_t") != NULL);
+                TESTEX("has opcode enum", strstr(content, "TESTSH_OP_HALT") != NULL);
+                TESTEX("has vm_init decl", strstr(content, "testsh_vm_init") != NULL);
+                TESTEX("has vm_run impl", strstr(content, "testsh_vm_run") != NULL);
+                TESTEX("no local includes", strstr(content, "#include \"vm.h\"") == NULL);
+                TESTEX("no local include opcodes", strstr(content, "#include \"opcodes.h\"") == NULL);
+                free(content);
+            }
+        }
+
+        /* cleanup */
+        remove("test_output/testsh.h");
+        remove("test_output/opcodes.h");
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        remove("test_output/assembler.h");
+        remove("test_output/assembler.c");
+        remove("test_output/disasm.h");
+        remove("test_output/disasm.c");
         vmgen_spec_free(&spec);
     }
 }

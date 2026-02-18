@@ -160,7 +160,7 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
 
     /* VM state struct */
     vmgen_buf_appendf(&buf,
-        "typedef struct {\n"
+        "typedef struct %s_vm {\n"
         "    const uint8_t *code;\n"
         "    size_t code_len;\n"
         "    size_t ip;\n"
@@ -170,6 +170,7 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "    %s_const_pool_t constants;\n"
         "    %s_frame_t frames[%s_MAX_FRAMES];\n"
         "    int frame_count;\n",
+        spec->name,
         spec->name, spec->stack.max_depth,
         spec->name, spec->name, upper);
 

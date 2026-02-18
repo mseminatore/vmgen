@@ -44,6 +44,13 @@ void vmgen_buf_append(vmgen_buf_t *buf, const char *str) {
     buf->data[buf->len] = '\0';
 }
 
+void vmgen_buf_append_len(vmgen_buf_t *buf, const char *str, size_t len) {
+    vmgen_buf_grow(buf, len);
+    memcpy(buf->data + buf->len, str, len);
+    buf->len += len;
+    buf->data[buf->len] = '\0';
+}
+
 void vmgen_buf_appendf(vmgen_buf_t *buf, const char *fmt, ...) {
     va_list args;
 
