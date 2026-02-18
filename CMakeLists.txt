@@ -132,6 +132,8 @@ endif()
 # Increase stack size to 8MB so builds don't overflow.
 if(MSVC)
     target_link_options(vmgen_tests PRIVATE /STACK:8388608)
+elseif(APPLE)
+    target_link_options(vmgen_tests PRIVATE -Wl,-stack_size,0x800000)
 else()
     target_link_options(vmgen_tests PRIVATE -Wl,-z,stacksize=8388608)
 endif()
