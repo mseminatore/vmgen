@@ -13,6 +13,11 @@ endif()
 
 # --- libyaml (fetched via FetchContent) ---
 include(FetchContent)
+
+# libyaml 0.2.5 uses cmake_minimum_required(VERSION 2.6) which newer CMake rejects.
+# Allow it to configure anyway.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 FetchContent_Declare(
     libyaml
     GIT_REPOSITORY https://github.com/yaml/libyaml.git
