@@ -14,6 +14,7 @@
 #include "codegen/gen_build.h"
 #include "codegen/gen_bytecode.h"
 #include "codegen/gen_test.h"
+#include "codegen/gen_linemap.h"
 #include "codegen/gen_single_header.h"
 #include "codegen/action_parser.h"
 #include "codegen/action_emit.h"
@@ -1555,6 +1556,48 @@ void test_actions(void) {
 
         remove("test_output/vm.h");
         remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    MODULE("Source Line Mapping");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_linemap(&spec, "test_output");
+        TESTEX("gen_linemap succeeds", rc == 0);
+
+        SUITE("linemap.h has types and API");
+        {
+            char *hdr = read_file("test_output/linemap.h");
+            TESTEX("linemap.h created", hdr != NULL);
+            if (hdr) {
+                TESTEX("has entry type", strstr(hdr, "testvm_linemap_entry_t") != NULL);
+                TESTEX("has map type", strstr(hdr, "testvm_linemap_t") != NULL);
+                TESTEX("has init", strstr(hdr, "testvm_linemap_init") != NULL);
+                TESTEX("has free", strstr(hdr, "testvm_linemap_free") != NULL);
+                TESTEX("has add", strstr(hdr, "testvm_linemap_add") != NULL);
+                TESTEX("has get_line", strstr(hdr, "testvm_linemap_get_line") != NULL);
+                free(hdr);
+            }
+        }
+
+        SUITE("linemap.c has implementation");
+        {
+            char *src = read_file("test_output/linemap.c");
+            TESTEX("linemap.c created", src != NULL);
+            if (src) {
+                TESTEX("has init impl", strstr(src, "testvm_linemap_init") != NULL);
+                TESTEX("has add impl", strstr(src, "testvm_linemap_add") != NULL);
+                TESTEX("has binary search", strstr(src, "lo <= hi") != NULL);
+                TESTEX("has realloc growth", strstr(src, "realloc") != NULL);
+                free(src);
+            }
+        }
+
+        remove("test_output/linemap.h");
+        remove("test_output/linemap.c");
         vmgen_spec_free(&spec);
     }
 }

@@ -55,6 +55,7 @@ int vmgen_gen_build(const vmgen_spec_t *spec, const char *output_dir) {
     }
 
     vmgen_buf_append(&buf, "    bytecode.c\n");
+    vmgen_buf_append(&buf, "    linemap.c\n");
 
     vmgen_buf_appendf(&buf,
         ")\n\n"

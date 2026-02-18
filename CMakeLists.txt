@@ -63,6 +63,7 @@ add_executable(vmgen
     src/codegen/gen_build.c
     src/codegen/gen_bytecode.c
     src/codegen/gen_test.c
+    src/codegen/gen_linemap.c
     src/codegen/gen_single_header.c
 )
 
@@ -101,6 +102,7 @@ add_executable(vmgen_tests
     src/codegen/gen_build.c
     src/codegen/gen_bytecode.c
     src/codegen/gen_test.c
+    src/codegen/gen_linemap.c
     src/codegen/gen_single_header.c
 )
 
