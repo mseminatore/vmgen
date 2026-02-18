@@ -26,15 +26,6 @@ static const char *c_type_for_operand(vmgen_operand_type_t type) {
     return "uint8_t";
 }
 
-static int operand_size(vmgen_operand_type_t type) {
-    switch (type) {
-    case VMGEN_OPERAND_UINT8:  case VMGEN_OPERAND_INT8:  return 1;
-    case VMGEN_OPERAND_UINT16: case VMGEN_OPERAND_INT16: return 2;
-    case VMGEN_OPERAND_UINT32: case VMGEN_OPERAND_INT32: return 4;
-    }
-    return 1;
-}
-
 /* Emit read macros for decoding operands from the bytecode stream */
 static void emit_read_macros(vmgen_buf_t *buf) {
     vmgen_buf_append(buf,

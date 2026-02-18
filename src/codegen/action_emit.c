@@ -3,6 +3,11 @@
 #include <string.h>
 #include <ctype.h>
 
+/* Check if spec uses tagged union values */
+static int is_tagged_union(const vmgen_spec_t *spec) {
+    return spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION;
+}
+
 /* Emit a C expression from an expression AST node. */
 static void emit_expr(vmgen_buf_t *buf, const vmgen_spec_t *spec,
                       const vmgen_expr_t *e) {
@@ -78,11 +83,6 @@ static const char *value_c_type(const vmgen_spec_t *spec) {
     case VMGEN_VALUE_TAGGED_UNION: return "int64_t";
     default:                 return "int64_t";
     }
-}
-
-/* Check if spec uses tagged union values */
-static int is_tagged_union(const vmgen_spec_t *spec) {
-    return spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION;
 }
 
 static void make_upper(char *dst, const char *src, size_t max) {
