@@ -138,7 +138,8 @@ else()
     target_link_options(vmgen_tests PRIVATE -Wl,-z,stacksize=8388608)
 endif()
 
-add_test(NAME vmgen_tests COMMAND vmgen_tests)
+add_test(NAME vmgen_tests COMMAND vmgen_tests
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # End-to-end integration tests: generate → compile → run for each spec
 set(E2E_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e_test.cmake")
