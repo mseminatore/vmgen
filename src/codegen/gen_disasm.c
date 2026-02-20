@@ -24,22 +24,51 @@ static const char *printf_fmt_for(vmgen_operand_type_t type) {
     return "%u";
 }
 
-static const char *c_read_expr(vmgen_operand_type_t type) {
+static const char *c_type_for_disasm_operand(vmgen_operand_type_t type) {
+    switch (type) {
+    case VMGEN_OPERAND_UINT8:  return "uint8_t";
+    case VMGEN_OPERAND_UINT16: return "uint16_t";
+    case VMGEN_OPERAND_UINT32: return "uint32_t";
+    case VMGEN_OPERAND_INT8:   return "int8_t";
+    case VMGEN_OPERAND_INT16:  return "int16_t";
+    case VMGEN_OPERAND_INT32:  return "int32_t";
+    }
+    return "uint8_t";
+}
+
+/* Emit a local-variable declaration that reads one operand from code[] and
+   advances offset.  Each read and advance is a separate statement so that
+   multiple operands are fully sequenced (no UB). */
+static void emit_operand_read(vmgen_buf_t *buf, vmgen_operand_type_t type,
+                               int index, const char *indent) {
     switch (type) {
     case VMGEN_OPERAND_UINT8:
-        return "code[offset++]";
+        vmgen_buf_appendf(buf, "%s%s _op%d = code[offset]; offset += 1;\n",
+                          indent, c_type_for_disasm_operand(type), index);
+        break;
     case VMGEN_OPERAND_INT8:
-        return "(int8_t)code[offset++]";
+        vmgen_buf_appendf(buf, "%s%s _op%d = (int8_t)code[offset]; offset += 1;\n",
+                          indent, c_type_for_disasm_operand(type), index);
+        break;
     case VMGEN_OPERAND_UINT16:
-        return "(offset += 2, (uint16_t)(code[offset-2] | (code[offset-1] << 8)))";
+        vmgen_buf_appendf(buf, "%s%s _op%d = (uint16_t)(code[offset] | (code[offset + 1] << 8)); offset += 2;\n",
+                          indent, c_type_for_disasm_operand(type), index);
+        break;
     case VMGEN_OPERAND_INT16:
-        return "(int16_t)(offset += 2, (uint16_t)(code[offset-2] | (code[offset-1] << 8)))";
+        vmgen_buf_appendf(buf, "%s%s _op%d = (int16_t)(uint16_t)(code[offset] | (code[offset + 1] << 8)); offset += 2;\n",
+                          indent, c_type_for_disasm_operand(type), index);
+        break;
     case VMGEN_OPERAND_UINT32:
-        return "(offset += 4, (uint32_t)(code[offset-4] | (code[offset-3] << 8) | (code[offset-2] << 16) | (code[offset-1] << 24)))";
+        vmgen_buf_appendf(buf, "%s%s _op%d = (uint32_t)(code[offset] | (code[offset + 1] << 8)"
+                          " | (code[offset + 2] << 16) | (code[offset + 3] << 24)); offset += 4;\n",
+                          indent, c_type_for_disasm_operand(type), index);
+        break;
     case VMGEN_OPERAND_INT32:
-        return "(int32_t)(offset += 4, (uint32_t)(code[offset-4] | (code[offset-3] << 8) | (code[offset-2] << 16) | (code[offset-1] << 24)))";
+        vmgen_buf_appendf(buf, "%s%s _op%d = (int32_t)(uint32_t)(code[offset] | (code[offset + 1] << 8)"
+                          " | (code[offset + 2] << 16) | (code[offset + 3] << 24)); offset += 4;\n",
+                          indent, c_type_for_disasm_operand(type), index);
+        break;
     }
-    return "code[offset++]";
 }
 
 int vmgen_gen_disasm(const vmgen_spec_t *spec, const char *output_dir) {
@@ -117,7 +146,12 @@ int vmgen_gen_disasm(const vmgen_spec_t *spec, const char *output_dir) {
 
         if (instr->operand_count == 0) {
             vmgen_buf_append(&buf, "        printf(\"\\n\");\n");
+            vmgen_buf_append(&buf, "        break;\n");
         } else {
+            vmgen_buf_append(&buf, "    {\n");
+            for (int j = 0; j < instr->operand_count; j++) {
+                emit_operand_read(&buf, instr->operands[j].type, j, "        ");
+            }
             vmgen_buf_append(&buf, "        printf(\"");
             for (int j = 0; j < instr->operand_count; j++) {
                 if (j > 0) vmgen_buf_append(&buf, " ");
@@ -125,12 +159,12 @@ int vmgen_gen_disasm(const vmgen_spec_t *spec, const char *output_dir) {
             }
             vmgen_buf_append(&buf, "\\n\"");
             for (int j = 0; j < instr->operand_count; j++) {
-                vmgen_buf_appendf(&buf, ", %s", c_read_expr(instr->operands[j].type));
+                vmgen_buf_appendf(&buf, ", _op%d", j);
             }
             vmgen_buf_append(&buf, ");\n");
+            vmgen_buf_append(&buf, "        break;\n");
+            vmgen_buf_append(&buf, "    }\n");
         }
-
-        vmgen_buf_append(&buf, "        break;\n");
     }
 
     vmgen_buf_appendf(&buf,
@@ -179,8 +213,13 @@ int vmgen_gen_disasm(const vmgen_spec_t *spec, const char *output_dir) {
         if (instr->operand_count == 0) {
             vmgen_buf_append(&buf,
                 "        n = snprintf(buf + written, buf_size - (size_t)written, \"\\n\");\n"
-                "        if (n > 0) written += n;\n");
+                "        if (n > 0) written += n;\n"
+                "        break;\n");
         } else {
+            vmgen_buf_append(&buf, "    {\n");
+            for (int j = 0; j < instr->operand_count; j++) {
+                emit_operand_read(&buf, instr->operands[j].type, j, "        ");
+            }
             vmgen_buf_append(&buf,
                 "        n = snprintf(buf + written, buf_size - (size_t)written, \"");
             for (int j = 0; j < instr->operand_count; j++) {
@@ -189,12 +228,12 @@ int vmgen_gen_disasm(const vmgen_spec_t *spec, const char *output_dir) {
             }
             vmgen_buf_append(&buf, "\\n\"");
             for (int j = 0; j < instr->operand_count; j++) {
-                vmgen_buf_appendf(&buf, ", %s", c_read_expr(instr->operands[j].type));
+                vmgen_buf_appendf(&buf, ", _op%d", j);
             }
             vmgen_buf_append(&buf, ");\n        if (n > 0) written += n;\n");
+            vmgen_buf_append(&buf, "        break;\n");
+            vmgen_buf_append(&buf, "    }\n");
         }
-
-        vmgen_buf_append(&buf, "        break;\n");
     }
 
     vmgen_buf_appendf(&buf,
