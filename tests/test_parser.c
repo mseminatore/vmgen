@@ -141,6 +141,12 @@ void test_parser(void) {
     TESTEX("full exception_handling on", full.features.exception_handling == 1);
     TESTEX("TRY_BEGIN is instruction 13", strcmp(full.instructions[13].name, "TRY_BEGIN") == 0);
     TESTEX("THROW is instruction 16", strcmp(full.instructions[16].name, "THROW") == 0);
+    TESTEX("full expose_dispatch_table", full.features.expose_dispatch_table == 1);
+    TESTEX("full has 2 extensions", full.extension_count == 2);
+    TESTEX("ext[0] is globals", strcmp(full.extensions[0].name, "globals") == 0);
+    TESTEX("ext[0] type void*", strcmp(full.extensions[0].type_str, "void *") == 0);
+    TESTEX("ext[0] has comment", strlen(full.extensions[0].comment) > 0);
+    TESTEX("ext[1] is user_data", strcmp(full.extensions[1].name, "user_data") == 0);
 
     TESTEX("full spec validates", vmgen_validate_spec(&full) == 0);
     vmgen_spec_free(&full);

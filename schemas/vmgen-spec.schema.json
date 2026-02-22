@@ -70,6 +70,33 @@
         },
         "frames": {
           "$ref": "#/$defs/frames"
+        },
+        "vm_extensions": {
+          "type": "array",
+          "description": "Custom fields to add to the VM struct",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Field name in the VM struct"
+              },
+              "type": {
+                "type": "string",
+                "description": "C type string for the field"
+              },
+              "include": {
+                "type": "string",
+                "description": "Header file to #include for this type"
+              },
+              "comment": {
+                "type": "string",
+                "description": "Optional inline comment"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       }
     }
@@ -170,6 +197,11 @@
         "exception_handling": {
           "type": "boolean",
           "description": "Enable exception handling with TRY_BEGIN, TRY_END, CATCH, and THROW opcodes",
+          "default": false
+        },
+        "expose_dispatch_table": {
+          "type": "boolean",
+          "description": "Make the fnptr dispatch table and handlers externally visible (non-static) for use by external code like compilers or trampolines",
           "default": false
         }
       }

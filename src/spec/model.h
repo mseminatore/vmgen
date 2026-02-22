@@ -117,6 +117,16 @@ typedef enum {
     VMGEN_CONST_STRING = (1 << 2),
 } vmgen_const_flags_t;
 
+/* VM struct extension field */
+#define VMGEN_MAX_EXTENSIONS 16
+
+typedef struct {
+    char name[VMGEN_MAX_NAME];
+    char type_str[VMGEN_MAX_DESC];      /* C type string, e.g. "void *" */
+    char include[VMGEN_MAX_NAME];       /* optional header to #include */
+    char comment[VMGEN_MAX_DESC];       /* optional inline comment */
+} vmgen_extension_t;
+
 /* Features configuration */
 typedef struct {
     bool interned_strings;
@@ -133,6 +143,7 @@ typedef struct {
     bool debug_tracing;
     bool nan_boxing;
     bool exception_handling;
+    bool expose_dispatch_table;
 } vmgen_features_t;
 
 /* Top-level spec */
@@ -151,6 +162,9 @@ typedef struct {
     int instruction_count;
 
     uint32_t const_flags;      /* vmgen_const_flags_t bitmask */
+
+    vmgen_extension_t extensions[VMGEN_MAX_EXTENSIONS];
+    int extension_count;
 } vmgen_spec_t;
 
 void vmgen_spec_init(vmgen_spec_t *spec);

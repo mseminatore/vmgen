@@ -13,6 +13,15 @@ initial_capacity = 256
 type = "dynamic"
 max_depth = 64
 
+[[vm.vm_extensions]]
+name = "globals"
+type = "void *"
+comment = "Global variable table"
+
+[[vm.vm_extensions]]
+name = "user_data"
+type = "void *"
+
 [vm.stack]
 type = "dynamic"
 max_depth = 4096
@@ -25,6 +34,7 @@ coroutines = true
 debug_tracing = true
 nan_boxing = false
 exception_handling = true
+expose_dispatch_table = true
 
 [vm.features.garbage_collection]
 enabled = true

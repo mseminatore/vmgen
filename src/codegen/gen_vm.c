@@ -77,23 +77,40 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
     if (spec->features.gc_enabled) {
         vmgen_buf_append(&buf, "#include \"gc.h\"\n");
     }
+    for (int i = 0; i < spec->extension_count; i++) {
+        if (spec->extensions[i].include[0]) {
+            vmgen_buf_appendf(&buf, "#include \"%s\"\n", spec->extensions[i].include);
+        }
+    }
     vmgen_buf_appendc(&buf, '\n');
 
     /* Value type */
     if (spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION) {
+        int has_string = (spec->type_flags & VMGEN_TYPE_STRING) != 0;
+        /* GC implies object type support */
+        int has_object = (spec->type_flags & VMGEN_TYPE_OBJECT) != 0 ||
+                         spec->features.gc_enabled;
+
+        /* Enum: always NIL + INT64 + DOUBLE + BOOL, then extras from types list */
         vmgen_buf_appendf(&buf,
             "typedef enum {\n"
+            "    %s_VAL_NIL,\n"
             "    %s_VAL_INT64,\n"
             "    %s_VAL_DOUBLE,\n"
             "    %s_VAL_BOOL,\n",
-            upper, upper, upper);
-        if (spec->features.gc_enabled) {
+            upper, upper, upper, upper);
+        if (has_string) {
             vmgen_buf_appendf(&buf,
-                "    %s_VAL_OBJ,\n", upper);
+                "    %s_VAL_STRING,\n", upper);
+        }
+        if (has_object) {
+            vmgen_buf_appendf(&buf,
+                "    %s_VAL_OBJECT,\n", upper);
         }
         vmgen_buf_appendf(&buf,
             "} %s_val_type_t;\n\n", spec->name);
 
+        /* Tagged union struct */
         vmgen_buf_appendf(&buf,
             "typedef struct {\n"
             "    %s_val_type_t type;\n"
@@ -102,9 +119,8 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
             "        double  f64;\n"
             "        int     boolean;\n",
             spec->name);
-        if (spec->features.gc_enabled) {
-            vmgen_buf_appendf(&buf,
-                "        %s_obj_t *obj;\n", spec->name);
+        if (has_object) {
+            vmgen_buf_append(&buf, "        void   *obj;\n");
         }
         vmgen_buf_appendf(&buf,
             "    } as;\n"
@@ -112,15 +128,17 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
 
         /* Value constructors */
         vmgen_buf_appendf(&buf,
+            "#define %s_NIL_VAL   ((%s_value_t){ .type = %s_VAL_NIL,    .as.i64 = 0 })\n"
             "#define %s_INT64(v)  ((%s_value_t){ .type = %s_VAL_INT64,  .as.i64 = (v) })\n"
             "#define %s_DOUBLE(v) ((%s_value_t){ .type = %s_VAL_DOUBLE, .as.f64 = (v) })\n"
             "#define %s_BOOL(v)   ((%s_value_t){ .type = %s_VAL_BOOL,   .as.boolean = (v) })\n",
             upper, spec->name, upper,
             upper, spec->name, upper,
+            upper, spec->name, upper,
             upper, spec->name, upper);
-        if (spec->features.gc_enabled) {
+        if (has_object) {
             vmgen_buf_appendf(&buf,
-                "#define %s_OBJ(v)    ((%s_value_t){ .type = %s_VAL_OBJ,    .as.obj = (v) })\n",
+                "#define %s_OBJ(v)    ((%s_value_t){ .type = %s_VAL_OBJECT, .as.obj = (void*)(v) })\n",
                 upper, spec->name, upper);
         }
         vmgen_buf_appendc(&buf, '\n');
@@ -262,12 +280,30 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
             spec->name, upper, spec->name);
     }
 
+    /* User-defined extension fields */
+    for (int i = 0; i < spec->extension_count; i++) {
+        const vmgen_extension_t *ext = &spec->extensions[i];
+        if (ext->comment[0]) {
+            vmgen_buf_appendf(&buf, "    %s %s; /* %s */\n",
+                ext->type_str, ext->name, ext->comment);
+        } else {
+            vmgen_buf_appendf(&buf, "    %s %s;\n",
+                ext->type_str, ext->name);
+        }
+    }
+
+    /* Cleanup callback */
+    vmgen_buf_appendf(&buf,
+        "    void (*cleanup)(struct %s_vm *vm);\n",
+        spec->name);
+
     vmgen_buf_appendf(&buf, "} %s_vm_t;\n\n", spec->name);
 
     /* API prototypes */
     vmgen_buf_appendf(&buf,
         "void %s_vm_init(%s_vm_t *vm);\n"
         "void %s_vm_free(%s_vm_t *vm);\n"
+        "void %s_vm_set_cleanup(%s_vm_t *vm, void (*cleanup)(%s_vm_t *vm));\n"
         "int  %s_vm_run(%s_vm_t *vm, const uint8_t *code, size_t code_len);\n"
         "void %s_vm_push(%s_vm_t *vm, %s_value_t value);\n"
         "%s_value_t %s_vm_pop(%s_vm_t *vm);\n"
@@ -280,6 +316,7 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "void %s_vm_set_step_callback(%s_vm_t *vm, void (*cb)(void *vm, size_t ip));\n",
         spec->name, spec->name,
         spec->name, spec->name,
+        spec->name, spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name, spec->name,
         spec->name, spec->name, spec->name,
@@ -289,6 +326,18 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name);
+
+    /* Exposed dispatch table declarations */
+    if (spec->features.expose_dispatch_table &&
+        (spec->dispatch == VMGEN_DISPATCH_FNPTR ||
+         spec->dispatch == VMGEN_DISPATCH_AUTO)) {
+        vmgen_buf_appendf(&buf,
+            "\n/* Dispatch table (externally visible) */\n"
+            "typedef int (*%s_handler_t)(%s_vm_t *vm);\n"
+            "extern %s_handler_t %s_dispatch_table[];\n",
+            spec->name, spec->name,
+            spec->name, spec->name);
+    }
 
     vmgen_emit_guard_close(&buf, guard);
 
@@ -465,17 +514,22 @@ static void emit_threaded_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
 }
 static void emit_fnptr_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
                                 const char *upper) {
-    /* Forward-declare handler type */
-    vmgen_buf_appendf(buf,
-        "typedef int (*%s_handler_t)(%s_vm_t *vm);\n\n",
-        spec->name, spec->name);
+    int exposed = spec->features.expose_dispatch_table;
+    const char *linkage = exposed ? "" : "static ";
+
+    /* Forward-declare handler type (in .c only when not exposed — header has it) */
+    if (!exposed) {
+        vmgen_buf_appendf(buf,
+            "typedef int (*%s_handler_t)(%s_vm_t *vm);\n\n",
+            spec->name, spec->name);
+    }
 
     /* Generate handler functions */
     for (int i = 0; i < spec->instruction_count; i++) {
         const vmgen_instr_t *instr = &spec->instructions[i];
         vmgen_buf_appendf(buf,
-            "static int handle_%s(%s_vm_t *vm) {\n",
-            instr->name, spec->name);
+            "%sint handle_%s(%s_vm_t *vm) {\n",
+            linkage, instr->name, spec->name);
 
         /* Decode operands */
         for (int j = 0; j < instr->operand_count; j++) {
@@ -509,8 +563,8 @@ static void emit_fnptr_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
 
     /* Dispatch table */
     vmgen_buf_appendf(buf,
-        "static %s_handler_t %s_dispatch_table[] = {\n",
-        spec->name, spec->name);
+        "%s%s_handler_t %s_dispatch_table[] = {\n",
+        linkage, spec->name, spec->name);
     for (int i = 0; i < spec->instruction_count; i++) {
         vmgen_buf_appendf(buf, "    handle_%s,\n",
                           spec->instructions[i].name);
@@ -722,7 +776,8 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
 
     /* vm_free */
     vmgen_buf_appendf(&buf,
-        "void %s_vm_free(%s_vm_t *vm) {\n",
+        "void %s_vm_free(%s_vm_t *vm) {\n"
+        "    if (vm->cleanup) vm->cleanup(vm);\n",
         spec->name, spec->name);
 
     if (spec->stack.type == VMGEN_STACK_DYNAMIC) {
@@ -739,6 +794,13 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         "    memset(vm, 0, sizeof(*vm));\n"
         "}\n\n");
 
+    /* vm_set_cleanup */
+    vmgen_buf_appendf(&buf,
+        "void %s_vm_set_cleanup(%s_vm_t *vm, void (*cleanup)(%s_vm_t *vm)) {\n"
+        "    vm->cleanup = cleanup;\n"
+        "}\n\n",
+        spec->name, spec->name, spec->name);
+
     /* GC root scanning function (mark-sweep only) */
     if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
         vmgen_buf_appendf(&buf,
@@ -750,13 +812,13 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
             vmgen_buf_appendf(&buf,
                 "    /* Mark object references on the stack */\n"
                 "    for (int i = 0; i < vm->sp; i++) {\n"
-                "        if (vm->stack[i].type == %s_VAL_OBJ && vm->stack[i].as.obj) {\n"
+                "        if (vm->stack[i].type == %s_VAL_OBJECT && vm->stack[i].as.obj) {\n"
                 "            %s_gc_mark_object(vm->stack[i].as.obj);\n"
                 "        }\n"
                 "    }\n"
                 "    /* Mark object references in the constant pool */\n"
                 "    for (int i = 0; i < vm->constants.count; i++) {\n"
-                "        if (vm->constants.values[i].type == %s_VAL_OBJ &&\n"
+                "        if (vm->constants.values[i].type == %s_VAL_OBJECT &&\n"
                 "            vm->constants.values[i].as.obj) {\n"
                 "            %s_gc_mark_object(vm->constants.values[i].as.obj);\n"
                 "        }\n"

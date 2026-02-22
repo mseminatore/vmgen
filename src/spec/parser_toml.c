@@ -115,6 +115,9 @@ static void parse_features(toml_table_t *feat, vmgen_spec_t *spec) {
 
     d = toml_bool_in(feat, "exception_handling");
     if (d.ok) spec->features.exception_handling = d.u.b;
+
+    d = toml_bool_in(feat, "expose_dispatch_table");
+    if (d.ok) spec->features.expose_dispatch_table = d.u.b;
 }
 
 static void parse_operands(toml_array_t *arr, vmgen_instr_t *instr) {
@@ -209,6 +212,26 @@ static void parse_frames(toml_table_t *frames, vmgen_spec_t *spec) {
     if (d.ok) spec->frame.max_depth = (int)d.u.i;
 }
 
+static void parse_vm_extensions_toml(toml_array_t *arr, vmgen_spec_t *spec) {
+    int n = toml_array_nelem(arr);
+    for (int i = 0; i < n && spec->extension_count < VMGEN_MAX_EXTENSIONS; i++) {
+        toml_table_t *ext = toml_table_at(arr, i);
+        if (!ext) continue;
+        vmgen_extension_t *e = &spec->extensions[spec->extension_count];
+        memset(e, 0, sizeof(*e));
+        toml_datum_t d;
+        d = toml_string_in(ext, "name");
+        if (d.ok) { safe_copy(e->name, d.u.s, VMGEN_MAX_NAME); free(d.u.s); }
+        d = toml_string_in(ext, "type");
+        if (d.ok) { safe_copy(e->type_str, d.u.s, VMGEN_MAX_DESC); free(d.u.s); }
+        d = toml_string_in(ext, "include");
+        if (d.ok) { safe_copy(e->include, d.u.s, VMGEN_MAX_NAME); free(d.u.s); }
+        d = toml_string_in(ext, "comment");
+        if (d.ok) { safe_copy(e->comment, d.u.s, VMGEN_MAX_DESC); free(d.u.s); }
+        if (e->name[0] && e->type_str[0]) spec->extension_count++;
+    }
+}
+
 int vmgen_parse_spec_toml(const char *path, vmgen_spec_t *spec) {
     FILE *fp = fopen(path, "r");
     if (!fp) {
@@ -277,6 +300,10 @@ int vmgen_parse_spec_toml(const char *path, vmgen_spec_t *spec) {
     /* Frames config */
     toml_table_t *frames = toml_table_in(vm, "frames");
     if (frames) parse_frames(frames, spec);
+
+    /* VM extension fields */
+    toml_array_t *exts = toml_array_in(vm, "vm_extensions");
+    if (exts) parse_vm_extensions_toml(exts, spec);
 
     toml_free(root);
     return 0;

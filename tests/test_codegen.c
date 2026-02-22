@@ -1139,8 +1139,8 @@ void test_actions(void) {
         char *hdr = read_file("test_output/vm.h");
         TESTEX("vm.h created", hdr != NULL);
         if (hdr) {
-            TESTEX("vm.h has VAL_OBJ enum", strstr(hdr, "VAL_OBJ") != NULL);
-            TESTEX("vm.h has obj pointer in union", strstr(hdr, "obj_t *obj") != NULL);
+            TESTEX("vm.h has VAL_OBJECT enum", strstr(hdr, "VAL_OBJECT") != NULL);
+            TESTEX("vm.h has obj pointer in union", strstr(hdr, "void   *obj") != NULL);
             TESTEX("vm.h has OBJ constructor", strstr(hdr, "_OBJ(v)") != NULL);
             free(hdr);
         }
@@ -1149,7 +1149,7 @@ void test_actions(void) {
         TESTEX("vm.c created", content != NULL);
         if (content) {
             TESTEX("vm.c has mark_roots function", strstr(content, "mark_roots") != NULL);
-            TESTEX("vm.c scans stack for OBJ", strstr(content, "VAL_OBJ") != NULL);
+            TESTEX("vm.c scans stack for OBJECT", strstr(content, "VAL_OBJECT") != NULL);
             TESTEX("vm.c calls gc_mark_object", strstr(content, "gc_mark_object") != NULL);
             TESTEX("vm.c registers roots in run", strstr(content, "gc_set_roots") != NULL);
             free(content);
@@ -1987,6 +1987,179 @@ void test_optimizer(void) {
 
         remove("test_output/optimizer.h");
         remove("test_output/optimizer.c");
+        vmgen_spec_free(&spec);
+    }
+
+    /* --- Value Type Completeness --- */
+    MODULE("Value Type Generation");
+
+    SUITE("NIL type always generated");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("vm.h has VAL_NIL", strstr(hdr, "VAL_NIL") != NULL);
+            TESTEX("vm.h has NIL_VAL constructor", strstr(hdr, "NIL_VAL") != NULL);
+            TESTEX("vm.h has VAL_INT64", strstr(hdr, "VAL_INT64") != NULL);
+            TESTEX("vm.h has VAL_DOUBLE", strstr(hdr, "VAL_DOUBLE") != NULL);
+            TESTEX("vm.h has VAL_BOOL", strstr(hdr, "VAL_BOOL") != NULL);
+            free(hdr);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("OBJECT type from type_flags without GC");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.type_flags |= VMGEN_TYPE_OBJECT;
+        spec.features.gc_enabled = false;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("vm.h has VAL_OBJECT", strstr(hdr, "VAL_OBJECT") != NULL);
+            TESTEX("vm.h has void *obj", strstr(hdr, "void   *obj") != NULL);
+            TESTEX("vm.h has OBJ constructor", strstr(hdr, "_OBJ(v)") != NULL);
+            free(hdr);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("STRING type from type_flags");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.type_flags |= VMGEN_TYPE_STRING;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("vm.h has VAL_STRING", strstr(hdr, "VAL_STRING") != NULL);
+            free(hdr);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    /* --- VM Extension Fields --- */
+    MODULE("VM Extension Fields");
+
+    SUITE("Extension fields appear in VM struct");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        strcpy(spec.extensions[0].name, "globals");
+        strcpy(spec.extensions[0].type_str, "void *");
+        strcpy(spec.extensions[0].comment, "Global variable table");
+        strcpy(spec.extensions[1].name, "natives");
+        strcpy(spec.extensions[1].type_str, "native_table_t");
+        strcpy(spec.extensions[1].include, "native.h");
+        spec.extension_count = 2;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("has globals field", strstr(hdr, "void * globals") != NULL);
+            TESTEX("has globals comment", strstr(hdr, "Global variable table") != NULL);
+            TESTEX("has natives field", strstr(hdr, "native_table_t natives") != NULL);
+            TESTEX("includes native.h", strstr(hdr, "#include \"native.h\"") != NULL);
+            free(hdr);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    /* --- Cleanup Hooks --- */
+    MODULE("Cleanup Hooks");
+
+    SUITE("vm_free calls cleanup callback");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("has cleanup field", strstr(hdr, "void (*cleanup)") != NULL);
+            TESTEX("has set_cleanup prototype", strstr(hdr, "vm_set_cleanup") != NULL);
+            free(hdr);
+        }
+
+        char *src = read_file("test_output/vm.c");
+        TESTEX("vm.c created", src != NULL);
+        if (src) {
+            TESTEX("vm_free calls cleanup", strstr(src, "vm->cleanup") != NULL);
+            TESTEX("has set_cleanup impl", strstr(src, "vm_set_cleanup") != NULL);
+            free(src);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    /* --- Exposed Dispatch Table --- */
+    MODULE("Exposed Dispatch Table");
+
+    SUITE("Dispatch table non-static when exposed");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.dispatch = VMGEN_DISPATCH_FNPTR;
+        spec.features.expose_dispatch_table = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("has extern dispatch table", strstr(hdr, "extern") != NULL);
+            TESTEX("has handler_t typedef", strstr(hdr, "handler_t") != NULL);
+            free(hdr);
+        }
+
+        char *src = read_file("test_output/vm.c");
+        TESTEX("vm.c created", src != NULL);
+        if (src) {
+            TESTEX("handlers not static", strstr(src, "static int handle_") == NULL);
+            free(src);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
         vmgen_spec_free(&spec);
     }
 }

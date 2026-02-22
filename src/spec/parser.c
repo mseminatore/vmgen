@@ -304,6 +304,12 @@ static void parse_features(parse_ctx_t *ctx) {
             if (!expect_scalar(ctx, &v)) return;
             ctx->spec->features.exception_handling = parse_bool(event_scalar(&v));
             yaml_event_delete(&v);
+        } else if (str_eq(key, "expose_dispatch_table")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!expect_scalar(ctx, &v)) return;
+            ctx->spec->features.expose_dispatch_table = parse_bool(event_scalar(&v));
+            yaml_event_delete(&v);
         } else {
             yaml_event_delete(&e);
             skip_value(ctx);
@@ -525,6 +531,56 @@ static void parse_frames(parse_ctx_t *ctx) {
     }
 }
 
+/* Parse a single extension: { name: ..., type: ..., include: ..., comment: ... } */
+static void parse_extension(parse_ctx_t *ctx) {
+    vmgen_extension_t ext;
+    memset(&ext, 0, sizeof(ext));
+
+    yaml_event_t e;
+    while (!ctx->error) {
+        if (!next_event(ctx, &e)) return;
+        if (e.type == YAML_MAPPING_END_EVENT) { yaml_event_delete(&e); break; }
+        if (e.type != YAML_SCALAR_EVENT) { yaml_event_delete(&e); continue; }
+
+        const char *key = event_scalar(&e);
+        int is_name    = str_eq(key, "name");
+        int is_type    = str_eq(key, "type");
+        int is_include = str_eq(key, "include");
+        int is_comment = str_eq(key, "comment");
+        yaml_event_delete(&e);
+        yaml_event_t v;
+        if (!expect_scalar(ctx, &v)) return;
+        const char *val = event_scalar(&v);
+
+        if (is_name)         safe_copy(ext.name,     val, VMGEN_MAX_NAME);
+        else if (is_type)    safe_copy(ext.type_str, val, VMGEN_MAX_DESC);
+        else if (is_include) safe_copy(ext.include,  val, VMGEN_MAX_NAME);
+        else if (is_comment) safe_copy(ext.comment,  val, VMGEN_MAX_DESC);
+        yaml_event_delete(&v);
+    }
+
+    if (ext.name[0] && ext.type_str[0]) {
+        if (ctx->spec->extension_count < VMGEN_MAX_EXTENSIONS) {
+            ctx->spec->extensions[ctx->spec->extension_count++] = ext;
+        }
+    }
+}
+
+/* Parse vm_extensions: [ { name: ..., type: ... }, ... ] */
+static void parse_vm_extensions(parse_ctx_t *ctx) {
+    yaml_event_t e;
+    while (!ctx->error) {
+        if (!next_event(ctx, &e)) return;
+        if (e.type == YAML_SEQUENCE_END_EVENT) { yaml_event_delete(&e); return; }
+        if (e.type == YAML_MAPPING_START_EVENT) {
+            yaml_event_delete(&e);
+            parse_extension(ctx);
+        } else {
+            yaml_event_delete(&e);
+        }
+    }
+}
+
 static void parse_vm(parse_ctx_t *ctx) {
     yaml_event_t e;
     while (!ctx->error) {
@@ -626,6 +682,16 @@ static void parse_vm(parse_ctx_t *ctx) {
             if (v.type == YAML_MAPPING_START_EVENT) {
                 yaml_event_delete(&v);
                 parse_frames(ctx);
+            } else {
+                yaml_event_delete(&v);
+            }
+        } else if (str_eq(key, "vm_extensions")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!next_event(ctx, &v)) return;
+            if (v.type == YAML_SEQUENCE_START_EVENT) {
+                yaml_event_delete(&v);
+                parse_vm_extensions(ctx);
             } else {
                 yaml_event_delete(&v);
             }

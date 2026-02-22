@@ -27,6 +27,7 @@ vm:
     debug_tracing: true
     nan_boxing: false
     exception_handling: true
+    expose_dispatch_table: true
 
   dispatch: "auto"
 
@@ -134,3 +135,7 @@ vm:
   frames:
     type: "dynamic"
     max_depth: 64
+
+  vm_extensions:
+    - { name: globals, type: "void *", comment: "Global variable table" }
+    - { name: user_data, type: "void *" }
