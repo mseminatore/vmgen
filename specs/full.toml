@@ -59,9 +59,9 @@ operands = []
 [[vm.instructions]]
 name = "ADD"
 description = "Pop two values, push their sum"
-action = "pop b; pop a; push a + b"
 stack_effect = -1
 operands = []
+typed_action = { int64 = "pop b; pop a; push a + b", double = "pop b; pop a; push a + b" }
 
 [[vm.instructions]]
 name = "SUB"

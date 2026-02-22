@@ -142,6 +142,11 @@ void test_parser(void) {
     TESTEX("TRY_BEGIN is instruction 13", strcmp(full.instructions[13].name, "TRY_BEGIN") == 0);
     TESTEX("THROW is instruction 16", strcmp(full.instructions[16].name, "THROW") == 0);
     TESTEX("full expose_dispatch_table", full.features.expose_dispatch_table == 1);
+    TESTEX("ADD has typed_action", full.instructions[2].typed_action_count == 2);
+    TESTEX("ADD typed_action[0] is int64", strcmp(full.instructions[2].typed_action_types[0], "int64") == 0);
+    TESTEX("ADD typed_action[1] is double", strcmp(full.instructions[2].typed_action_types[1], "double") == 0);
+    TESTEX("ADD typed_action[0] DSL", strstr(full.instructions[2].typed_actions[0], "push a + b") != NULL);
+    TESTEX("ADD has no plain action", full.instructions[2].action == NULL);
     TESTEX("full has 2 extensions", full.extension_count == 2);
     TESTEX("ext[0] is globals", strcmp(full.extensions[0].name, "globals") == 0);
     TESTEX("ext[0] type void*", strcmp(full.extensions[0].type_str, "void *") == 0);

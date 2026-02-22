@@ -32,6 +32,8 @@ typedef struct {
 } vmgen_operand_t;
 
 /* An instruction definition */
+#define VMGEN_MAX_TYPED_ACTIONS 8
+
 typedef struct {
     char name[VMGEN_MAX_NAME];
     char description[VMGEN_MAX_DESC];
@@ -41,6 +43,12 @@ typedef struct {
     char *action_c;                     /* inline C snippet (heap, may be NULL) */
     int stack_effect;                   /* declared net stack effect */
     bool stack_effect_set;              /* whether stack_effect was explicitly declared */
+
+    /* Type-dispatched actions: per-type DSL strings + optional default (inline C) */
+    char typed_action_types[VMGEN_MAX_TYPED_ACTIONS][VMGEN_MAX_NAME];
+    char *typed_actions[VMGEN_MAX_TYPED_ACTIONS];   /* DSL strings (heap) */
+    int typed_action_count;
+    char *typed_action_default;                     /* inline C fallback (heap, may be NULL) */
 } vmgen_instr_t;
 
 /* Allocation strategy (shared by stack, constant pool, frames) */

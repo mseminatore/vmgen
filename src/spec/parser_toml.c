@@ -165,6 +165,27 @@ static void parse_instructions(toml_array_t *arr, vmgen_spec_t *spec) {
         d = toml_int_in(instr_tbl, "stack_effect");
         if (d.ok) { instr->stack_effect = (int)d.u.i; instr->stack_effect_set = true; }
 
+        /* typed_action: table with type keys and DSL/C values */
+        toml_table_t *ta = toml_table_in(instr_tbl, "typed_action");
+        if (ta) {
+            /* Iterate all keys in the typed_action table */
+            for (int k = 0; ; k++) {
+                const char *tkey = toml_key_in(ta, k);
+                if (!tkey) break;
+                d = toml_string_in(ta, tkey);
+                if (!d.ok) continue;
+                if (str_eq(tkey, "default")) {
+                    free(instr->typed_action_default);
+                    instr->typed_action_default = vmgen_strdup(d.u.s);
+                } else if (instr->typed_action_count < VMGEN_MAX_TYPED_ACTIONS) {
+                    int idx = instr->typed_action_count++;
+                    safe_copy(instr->typed_action_types[idx], tkey, VMGEN_MAX_NAME);
+                    instr->typed_actions[idx] = vmgen_strdup(d.u.s);
+                }
+                free(d.u.s);
+            }
+        }
+
         toml_array_t *ops = toml_array_in(instr_tbl, "operands");
         if (ops) parse_operands(ops, instr);
 

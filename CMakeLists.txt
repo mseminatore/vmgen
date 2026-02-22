@@ -128,14 +128,14 @@ else()
     target_compile_options(vmgen_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# vmgen_spec_t is ~127KB (instructions[256]); tests create 30+ on the stack.
-# Increase stack size to 8MB so builds don't overflow.
+# vmgen_spec_t is ~280KB (instructions[256] with typed_action fields);
+# tests create 30+ on the stack. Increase stack size to 16MB so builds don't overflow.
 if(MSVC)
-    target_link_options(vmgen_tests PRIVATE /STACK:8388608)
+    target_link_options(vmgen_tests PRIVATE /STACK:16777216)
 elseif(APPLE)
-    target_link_options(vmgen_tests PRIVATE -Wl,-stack_size,0x800000)
+    target_link_options(vmgen_tests PRIVATE -Wl,-stack_size,0x1000000)
 else()
-    target_link_options(vmgen_tests PRIVATE -Wl,-z,stacksize=8388608)
+    target_link_options(vmgen_tests PRIVATE -Wl,-z,stacksize=16777216)
 endif()
 
 add_test(NAME vmgen_tests COMMAND vmgen_tests

@@ -248,6 +248,16 @@
           "type": "integer",
           "description": "Expected net stack depth change (pops - pushes). VMGen warns if this doesn't match the computed effect from the action DSL.",
           "examples": [-1, 0, 1]
+        },
+        "typed_action": {
+          "type": "object",
+          "description": "Type-dispatched action blocks. Keys are type names (int64, double, etc.) mapping to DSL strings. The 'default' key maps to inline C fallback code for unmatched types.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "examples": [
+            { "int64": "pop b; pop a; push a + b", "double": "pop b; pop a; push a + b", "default": "vm_push(vm, vm->arith_fallback(vm, a, b, OP_ADD));" }
+          ]
         }
       }
     },

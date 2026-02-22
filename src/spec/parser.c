@@ -423,6 +423,39 @@ static void parse_instruction(parse_ctx_t *ctx, vmgen_instr_t *instr) {
             instr->stack_effect = atoi(event_scalar(&v));
             instr->stack_effect_set = true;
             yaml_event_delete(&v);
+        } else if (str_eq(key, "typed_action")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!next_event(ctx, &v)) return;
+            if (v.type == YAML_MAPPING_START_EVENT) {
+                yaml_event_delete(&v);
+                /* Parse typed_action mapping: { type: "dsl", default: "inline C" } */
+                yaml_event_t te;
+                while (!ctx->error) {
+                    if (!next_event(ctx, &te)) return;
+                    if (te.type == YAML_MAPPING_END_EVENT) { yaml_event_delete(&te); break; }
+                    if (te.type != YAML_SCALAR_EVENT) { yaml_event_delete(&te); continue; }
+                    const char *tkey = event_scalar(&te);
+                    int is_default = str_eq(tkey, "default");
+                    char type_name[VMGEN_MAX_NAME];
+                    if (!is_default)
+                        safe_copy(type_name, tkey, VMGEN_MAX_NAME);
+                    yaml_event_delete(&te);
+                    yaml_event_t tv;
+                    if (!expect_scalar(ctx, &tv)) return;
+                    if (is_default) {
+                        free(instr->typed_action_default);
+                        instr->typed_action_default = vmgen_strdup(event_scalar(&tv));
+                    } else if (instr->typed_action_count < VMGEN_MAX_TYPED_ACTIONS) {
+                        int idx = instr->typed_action_count++;
+                        safe_copy(instr->typed_action_types[idx], type_name, VMGEN_MAX_NAME);
+                        instr->typed_actions[idx] = vmgen_strdup(event_scalar(&tv));
+                    }
+                    yaml_event_delete(&tv);
+                }
+            } else {
+                yaml_event_delete(&v);
+            }
         } else {
             yaml_event_delete(&e);
             skip_value(ctx);

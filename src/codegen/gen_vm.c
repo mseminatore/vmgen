@@ -351,7 +351,13 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
 
 static void emit_action_body(vmgen_buf_t *buf, const vmgen_spec_t *spec,
                              const vmgen_instr_t *instr, const char *indent) {
-    if (instr->action_c && instr->action_c[0]) {
+    if (instr->typed_action_count > 0) {
+        /* Type-dispatched action: emit type switch */
+        if (vmgen_action_emit_typed(buf, indent, spec, instr) != 0) {
+            vmgen_buf_appendf(buf, "%s/* ERROR: failed to emit typed action for %s */\n",
+                              indent, instr->name);
+        }
+    } else if (instr->action_c && instr->action_c[0]) {
         /* Inline C: emit verbatim with indentation */
         vmgen_action_emit_inline_c(buf, indent, instr->action_c);
     } else if (instr->action && instr->action[0]) {
@@ -367,7 +373,10 @@ static void emit_action_body(vmgen_buf_t *buf, const vmgen_spec_t *spec,
                         instr->name, instr->stack_effect, computed);
                 }
             }
-            vmgen_action_emit(buf, indent, spec, instr, &action);
+            /* Try auto-dispatch for arithmetic ops on multi-type VMs */
+            if (vmgen_action_auto_dispatch(buf, indent, spec, instr, &action) != 0) {
+                vmgen_action_emit(buf, indent, spec, instr, &action);
+            }
             vmgen_action_free(&action);
         } else {
             fprintf(stderr, "vmgen: error parsing action for %s: %s\n",

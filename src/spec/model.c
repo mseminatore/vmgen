@@ -18,6 +18,10 @@ void vmgen_spec_free(vmgen_spec_t *spec) {
     for (int i = 0; i < spec->instruction_count; i++) {
         free(spec->instructions[i].action);
         free(spec->instructions[i].action_c);
+        for (int j = 0; j < spec->instructions[i].typed_action_count; j++) {
+            free(spec->instructions[i].typed_actions[j]);
+        }
+        free(spec->instructions[i].typed_action_default);
     }
     memset(spec, 0, sizeof(*spec));
 }

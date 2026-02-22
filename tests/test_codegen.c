@@ -2019,6 +2019,199 @@ void test_actions(void) {
         }
         vmgen_spec_free(&spec);
     }
+
+    /* ---- Typed action dispatch tests ---- */
+
+    SUITE("typed_action: explicit type dispatch emission");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "tvm");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.type_flags = VMGEN_TYPE_INT64 | VMGEN_TYPE_DOUBLE;
+
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+        strcpy(instr.name, "ADD");
+        instr.typed_action_count = 2;
+        strcpy(instr.typed_action_types[0], "int64");
+        instr.typed_actions[0] = vmgen_strdup("pop b; pop a; push a + b");
+        strcpy(instr.typed_action_types[1], "double");
+        instr.typed_actions[1] = vmgen_strdup("pop b; pop a; push a + b");
+        instr.typed_action_default = NULL;
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit_typed(&buf, "    ", &spec, &instr);
+
+        TESTEX("emits int64 branch", strstr(buf.data, "TVM_VAL_INT64") != NULL);
+        TESTEX("emits double branch", strstr(buf.data, "TVM_VAL_DOUBLE") != NULL);
+        TESTEX("uses .as.i64 in int64 path", strstr(buf.data, ".as.i64 + b.as.i64") != NULL);
+        TESTEX("uses .as.f64 in double path", strstr(buf.data, ".as.f64 + b.as.f64") != NULL);
+        TESTEX("wraps int64 in INT64", strstr(buf.data, "TVM_INT64(") != NULL);
+        TESTEX("wraps double in DOUBLE", strstr(buf.data, "TVM_DOUBLE(") != NULL);
+        TESTEX("pops as value_t before dispatch", strstr(buf.data, "tvm_value_t b = tvm_vm_pop(vm)") != NULL);
+        TESTEX("type error fallback", strstr(buf.data, "type mismatch in ADD") != NULL);
+
+        vmgen_buf_free(&buf);
+        free(instr.typed_actions[0]);
+        free(instr.typed_actions[1]);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("typed_action: with default clause");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "tvm");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.type_flags = VMGEN_TYPE_INT64 | VMGEN_TYPE_DOUBLE;
+
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+        strcpy(instr.name, "ADD");
+        instr.typed_action_count = 1;
+        strcpy(instr.typed_action_types[0], "int64");
+        instr.typed_actions[0] = vmgen_strdup("pop b; pop a; push a + b");
+        instr.typed_action_default = vmgen_strdup("return custom_add(vm, a, b);");
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit_typed(&buf, "    ", &spec, &instr);
+
+        TESTEX("emits int64 branch", strstr(buf.data, "TVM_VAL_INT64") != NULL);
+        TESTEX("emits default clause", strstr(buf.data, "custom_add(vm, a, b)") != NULL);
+        TESTEX("no type mismatch error", strstr(buf.data, "type mismatch") == NULL);
+
+        vmgen_buf_free(&buf);
+        free(instr.typed_actions[0]);
+        free(instr.typed_action_default);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("auto-dispatch: BINOP with int64+double");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "avm");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.type_flags = VMGEN_TYPE_INT64 | VMGEN_TYPE_DOUBLE;
+
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+        strcpy(instr.name, "MUL");
+
+        vmgen_action_t action;
+        vmgen_action_parse("pop b; pop a; push a * b", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        int rc = vmgen_action_auto_dispatch(&buf, "    ", &spec, &instr, &action);
+
+        TESTEX("auto-dispatch succeeds", rc == 0);
+        TESTEX("emits int64 branch", strstr(buf.data, "AVM_VAL_INT64") != NULL);
+        TESTEX("emits double branch", strstr(buf.data, "AVM_VAL_DOUBLE") != NULL);
+        TESTEX("uses .as.i64 for int64 mul", strstr(buf.data, ".as.i64 * b.as.i64") != NULL);
+        TESTEX("uses .as.f64 for double mul", strstr(buf.data, ".as.f64 * b.as.f64") != NULL);
+        TESTEX("type error fallback", strstr(buf.data, "type mismatch in MUL") != NULL);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("auto-dispatch: skipped for single-type spec");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "svm");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.type_flags = VMGEN_TYPE_INT64;  /* only int64 */
+
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+        strcpy(instr.name, "ADD");
+
+        vmgen_action_t action;
+        vmgen_action_parse("pop b; pop a; push a + b", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        int rc = vmgen_action_auto_dispatch(&buf, "    ", &spec, &instr, &action);
+
+        TESTEX("auto-dispatch returns -1 for single type", rc == -1);
+        TESTEX("no output emitted", buf.len == 0);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("auto-dispatch: skipped for non-arithmetic");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "nvm");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.type_flags = VMGEN_TYPE_INT64 | VMGEN_TYPE_DOUBLE;
+
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+        strcpy(instr.name, "DUP");
+
+        vmgen_action_t action;
+        vmgen_action_parse("peek a; push a", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        int rc = vmgen_action_auto_dispatch(&buf, "    ", &spec, &instr, &action);
+
+        TESTEX("auto-dispatch returns -1 for non-arithmetic", rc == -1);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("typed_action: wired into gen_vm (fnptr dispatch)");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "tdvm");
+        snprintf(spec.version, sizeof(spec.version), "1.0");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.type_flags = VMGEN_TYPE_INT64 | VMGEN_TYPE_DOUBLE;
+        spec.dispatch = VMGEN_DISPATCH_FNPTR;
+
+        vmgen_instr_t *halt = &spec.instructions[spec.instruction_count++];
+        strcpy(halt->name, "HALT");
+        halt->action = vmgen_strdup("halt");
+
+        vmgen_instr_t *add = &spec.instructions[spec.instruction_count++];
+        strcpy(add->name, "ADD");
+        add->typed_action_count = 2;
+        strcpy(add->typed_action_types[0], "int64");
+        add->typed_actions[0] = vmgen_strdup("pop b; pop a; push a + b");
+        strcpy(add->typed_action_types[1], "double");
+        add->typed_actions[1] = vmgen_strdup("pop b; pop a; push a + b");
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm with typed_action succeeds", rc == 0);
+
+        char *src = read_file("test_output/vm.c");
+        TESTEX("vm.c created", src != NULL);
+        if (src) {
+            TESTEX("has int64 type guard", strstr(src, "TDVM_VAL_INT64") != NULL);
+            TESTEX("has double type guard", strstr(src, "TDVM_VAL_DOUBLE") != NULL);
+            TESTEX("uses i64 accessor", strstr(src, ".as.i64 + b.as.i64") != NULL);
+            TESTEX("uses f64 accessor", strstr(src, ".as.f64 + b.as.f64") != NULL);
+            free(src);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
 }
 
 void test_optimizer(void) {
