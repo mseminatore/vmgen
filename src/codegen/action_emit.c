@@ -30,11 +30,7 @@ static void emit_expr(vmgen_buf_t *buf, const vmgen_spec_t *spec,
     case EXPR_CONST_INDEX:
         vmgen_buf_appendf(buf, "vm->constants.values[");
         emit_expr(buf, spec, e->u.index);
-        if (is_tagged_union(spec)) {
-            vmgen_buf_append(buf, "].as.i64");
-        } else {
-            vmgen_buf_append(buf, "]");
-        }
+        vmgen_buf_append(buf, "]");
         break;
 
     case EXPR_BINOP: {
@@ -116,7 +112,8 @@ int vmgen_action_emit(vmgen_buf_t *buf, const char *indent,
             break;
 
         case ACT_PUSH:
-            if (is_tagged_union(spec)) {
+            if (is_tagged_union(spec) &&
+                !(s->expr && s->expr->type == EXPR_CONST_INDEX)) {
                 char upper[VMGEN_MAX_NAME];
                 make_upper(upper, spec->name, sizeof(upper));
                 vmgen_buf_appendf(buf, "%s%s_vm_push(vm, %s_INT64(",
