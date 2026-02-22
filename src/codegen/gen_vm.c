@@ -283,7 +283,20 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
     /* User-defined extension fields */
     for (int i = 0; i < spec->extension_count; i++) {
         const vmgen_extension_t *ext = &spec->extensions[i];
-        if (ext->comment[0]) {
+        /* Detect function pointer types: contains "(*)" */
+        const char *fnptr = strstr(ext->type_str, "(*)");
+        if (fnptr) {
+            /* Emit as: RETTYPE (*NAME)(ARGS) */
+            int prefix_len = (int)(fnptr - ext->type_str);
+            const char *suffix = fnptr + 3; /* skip "(*)" */
+            if (ext->comment[0]) {
+                vmgen_buf_appendf(&buf, "    %.*s(*%s)%s; /* %s */\n",
+                    prefix_len, ext->type_str, ext->name, suffix, ext->comment);
+            } else {
+                vmgen_buf_appendf(&buf, "    %.*s(*%s)%s;\n",
+                    prefix_len, ext->type_str, ext->name, suffix);
+            }
+        } else if (ext->comment[0]) {
             vmgen_buf_appendf(&buf, "    %s %s; /* %s */\n",
                 ext->type_str, ext->name, ext->comment);
         } else {

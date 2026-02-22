@@ -75,7 +75,7 @@ static void emit_expr_typed(vmgen_buf_t *buf, const vmgen_spec_t *spec,
         case OP_SUB: op_str = "-";  break;
         case OP_MUL: op_str = "*";  break;
         case OP_DIV: op_str = "/";  break;
-        case OP_MOD: op_str = "%%"; break;
+        case OP_MOD: op_str = "%"; break;
         case OP_EQ:  op_str = "=="; break;
         case OP_NEQ: op_str = "!="; break;
         case OP_LT:  op_str = "<";  break;
@@ -86,7 +86,9 @@ static void emit_expr_typed(vmgen_buf_t *buf, const vmgen_spec_t *spec,
         }
         vmgen_buf_append(buf, "(");
         emit_expr_typed(buf, spec, e->u.binop.left, 1, tctx);
-        vmgen_buf_appendf(buf, " %s ", op_str);
+        vmgen_buf_append(buf, " ");
+        vmgen_buf_append(buf, op_str);
+        vmgen_buf_append(buf, " ");
         emit_expr_typed(buf, spec, e->u.binop.right, 1, tctx);
         vmgen_buf_append(buf, ")");
         break;

@@ -897,6 +897,30 @@ void test_actions(void) {
         vmgen_spec_free(&spec);
     }
 
+    SUITE("Emit modulo operator");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "test");
+        spec.stack.value_type = VMGEN_VALUE_INT64;
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+
+        vmgen_action_t action;
+        vmgen_action_parse("pop b; pop a; push a % b", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit(&buf, "    ", &spec, &instr, &action);
+
+        TESTEX("emits single percent", strstr(buf.data, "a % b") != NULL);
+        TESTEX("no double percent", strstr(buf.data, "%%") == NULL);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
+
     SUITE("Emit inline C");
     {
         vmgen_buf_t buf;
@@ -2414,6 +2438,54 @@ void test_optimizer(void) {
             TESTEX("has globals comment", strstr(hdr, "Global variable table") != NULL);
             TESTEX("has natives field", strstr(hdr, "native_table_t natives") != NULL);
             TESTEX("includes native.h", strstr(hdr, "#include \"native.h\"") != NULL);
+            free(hdr);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Function pointer extension fields");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        strcpy(spec.extensions[0].name, "arith_fallback");
+        strcpy(spec.extensions[0].type_str, "void (*)(testvm_vm_t *, testvm_value_t, testvm_value_t, int)");
+        spec.extension_count = 1;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("has correct fnptr syntax", strstr(hdr, "void (*arith_fallback)(testvm_vm_t *, testvm_value_t, testvm_value_t, int);") != NULL);
+            TESTEX("no invalid TYPE NAME pattern", strstr(hdr, "int) arith_fallback") == NULL);
+            free(hdr);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Function pointer extension with comment");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        strcpy(spec.extensions[0].name, "on_error");
+        strcpy(spec.extensions[0].type_str, "int (*)(int, const char *)");
+        strcpy(spec.extensions[0].comment, "Error callback");
+        spec.extension_count = 1;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("has correct fnptr with comment", strstr(hdr, "int (*on_error)(int, const char *); /* Error callback */") != NULL);
             free(hdr);
         }
         remove("test_output/vm.h");
