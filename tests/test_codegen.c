@@ -928,8 +928,138 @@ void test_actions(void) {
         vmgen_spec_free(&spec);
     }
 
-    /* --- Generated code verification --- */
-    MODULE("Action Integration in Generated Code");
+    SUITE("Tagged union: pop produces value_t");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "test");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+
+        vmgen_action_t action;
+        vmgen_action_parse("pop b; pop a; push a + b", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit(&buf, "    ", &spec, &instr, &action);
+
+        TESTEX("pop produces value_t", strstr(buf.data, "test_value_t b = test_vm_pop(vm)") != NULL);
+        TESTEX("push extracts .as.i64 for arithmetic", strstr(buf.data, "a.as.i64 + b.as.i64") != NULL);
+        TESTEX("push wraps in INT64", strstr(buf.data, "TEST_INT64(") != NULL);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Tagged union: peek/push passthrough preserves type");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "test");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+
+        vmgen_action_t action;
+        vmgen_action_parse("peek a; push a", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit(&buf, "    ", &spec, &instr, &action);
+
+        TESTEX("peek produces value_t", strstr(buf.data, "test_value_t a = vm->stack") != NULL);
+        TESTEX("push passes through (no INT64)", strstr(buf.data, "test_vm_push(vm, a)") != NULL);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Tagged union: pop _ just discards");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "test");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+
+        vmgen_action_t action;
+        vmgen_action_parse("pop _", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit(&buf, "    ", &spec, &instr, &action);
+
+        TESTEX("pop _ calls (void)vm_pop", strstr(buf.data, "(void)test_vm_pop(vm)") != NULL);
+        TESTEX("no .as.i64 extraction", strstr(buf.data, ".as.i64") == NULL);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Tagged union: catch/throw preserve type");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "test");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.features.exception_handling = true;
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+
+        /* catch ex; push ex */
+        vmgen_action_t act1;
+        vmgen_action_parse("catch ex; push ex", &act1);
+        vmgen_buf_t buf1;
+        vmgen_buf_init(&buf1);
+        vmgen_action_emit(&buf1, "    ", &spec, &instr, &act1);
+
+        TESTEX("catch produces value_t", strstr(buf1.data, "test_value_t ex = vm->current_exception") != NULL);
+        TESTEX("push ex passthrough", strstr(buf1.data, "test_vm_push(vm, ex)") != NULL);
+
+        vmgen_buf_free(&buf1);
+        vmgen_action_free(&act1);
+
+        /* pop ex; throw ex */
+        vmgen_action_t act2;
+        vmgen_action_parse("pop ex; throw ex", &act2);
+        vmgen_buf_t buf2;
+        vmgen_buf_init(&buf2);
+        vmgen_action_emit(&buf2, "    ", &spec, &instr, &act2);
+
+        TESTEX("throw assigns directly", strstr(buf2.data, "vm->current_exception = ex;") != NULL);
+
+        vmgen_buf_free(&buf2);
+        vmgen_action_free(&act2);
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Tagged union: jump_if_zero uses .as.i64");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        snprintf(spec.name, sizeof(spec.name), "test");
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        vmgen_instr_t instr;
+        memset(&instr, 0, sizeof(instr));
+
+        vmgen_action_t action;
+        vmgen_action_parse("pop a; jump_if_zero a $offset", &action);
+
+        vmgen_buf_t buf;
+        vmgen_buf_init(&buf);
+        vmgen_action_emit(&buf, "    ", &spec, &instr, &action);
+
+        TESTEX("uses .as.i64 for comparison", strstr(buf.data, "a.as.i64 == 0") != NULL);
+
+        vmgen_buf_free(&buf);
+        vmgen_action_free(&action);
+        vmgen_spec_free(&spec);
+    }
 
     SUITE("Generated vm.c with DSL actions");
     {

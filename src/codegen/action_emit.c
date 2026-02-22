@@ -8,9 +8,12 @@ static int is_tagged_union(const vmgen_spec_t *spec) {
     return spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION;
 }
 
-/* Emit a C expression from an expression AST node. */
-static void emit_expr(vmgen_buf_t *buf, const vmgen_spec_t *spec,
-                      const vmgen_expr_t *e) {
+/* Emit a C expression from an expression AST node.
+ * extract_scalar: when 1, EXPR_IDENT appends .as.i64 and EXPR_CONST_INDEX
+ * appends .as.i64 (for use in arithmetic). When 0, values are emitted as
+ * full tagged unions (for passthrough push/throw). */
+static void emit_expr_ex(vmgen_buf_t *buf, const vmgen_spec_t *spec,
+                         const vmgen_expr_t *e, int extract_scalar) {
     if (!e) return;
 
     switch (e->type) {
@@ -20,17 +23,20 @@ static void emit_expr(vmgen_buf_t *buf, const vmgen_spec_t *spec,
 
     case EXPR_IDENT:
         vmgen_buf_append(buf, e->u.ident);
+        if (extract_scalar && is_tagged_union(spec))
+            vmgen_buf_append(buf, ".as.i64");
         break;
 
     case EXPR_OPERAND:
-        /* Operand refs emit as the decoded local variable name */
         vmgen_buf_append(buf, e->u.ident);
         break;
 
     case EXPR_CONST_INDEX:
         vmgen_buf_appendf(buf, "vm->constants.values[");
-        emit_expr(buf, spec, e->u.index);
+        emit_expr_ex(buf, spec, e->u.index, 1);
         vmgen_buf_append(buf, "]");
+        if (extract_scalar && is_tagged_union(spec))
+            vmgen_buf_append(buf, ".as.i64");
         break;
 
     case EXPR_BINOP: {
@@ -50,9 +56,9 @@ static void emit_expr(vmgen_buf_t *buf, const vmgen_spec_t *spec,
         default: break;
         }
         vmgen_buf_append(buf, "(");
-        emit_expr(buf, spec, e->u.binop.left);
+        emit_expr_ex(buf, spec, e->u.binop.left, 1);
         vmgen_buf_appendf(buf, " %s ", op_str);
-        emit_expr(buf, spec, e->u.binop.right);
+        emit_expr_ex(buf, spec, e->u.binop.right, 1);
         vmgen_buf_append(buf, ")");
         break;
     }
@@ -60,15 +66,21 @@ static void emit_expr(vmgen_buf_t *buf, const vmgen_spec_t *spec,
     case EXPR_UNARY:
         if (e->u.unary.op == OP_NEG) {
             vmgen_buf_append(buf, "(-(");
-            emit_expr(buf, spec, e->u.unary.operand);
+            emit_expr_ex(buf, spec, e->u.unary.operand, 1);
             vmgen_buf_append(buf, "))");
         } else {
             vmgen_buf_append(buf, "(!(");
-            emit_expr(buf, spec, e->u.unary.operand);
+            emit_expr_ex(buf, spec, e->u.unary.operand, 1);
             vmgen_buf_append(buf, "))");
         }
         break;
     }
+}
+
+/* Default: extract scalar for arithmetic contexts */
+static void emit_expr(vmgen_buf_t *buf, const vmgen_spec_t *spec,
+                      const vmgen_expr_t *e) {
+    emit_expr_ex(buf, spec, e, 1);
 }
 
 /* Get the C type string for the VM's value type. */
@@ -100,26 +112,39 @@ int vmgen_action_emit(vmgen_buf_t *buf, const char *indent,
         switch (s->type) {
         case ACT_POP:
             if (is_tagged_union(spec)) {
-                vmgen_buf_appendf(buf, "%s%s %s = %s_vm_pop(vm).as.i64;\n",
-                                  indent, vtype, s->ident, spec->name);
+                if (strcmp(s->ident, "_") == 0) {
+                    vmgen_buf_appendf(buf, "%s(void)%s_vm_pop(vm);\n",
+                                      indent, spec->name);
+                } else {
+                    vmgen_buf_appendf(buf, "%s%s_value_t %s = %s_vm_pop(vm);\n",
+                                      indent, spec->name, s->ident, spec->name);
+                }
             } else {
                 vmgen_buf_appendf(buf, "%s%s %s = %s_vm_pop(vm);\n",
                                   indent, vtype, s->ident, spec->name);
-            }
-            if (strcmp(s->ident, "_") == 0) {
-                vmgen_buf_appendf(buf, "%s(void)_;\n", indent);
+                if (strcmp(s->ident, "_") == 0) {
+                    vmgen_buf_appendf(buf, "%s(void)_;\n", indent);
+                }
             }
             break;
 
         case ACT_PUSH:
-            if (is_tagged_union(spec) &&
-                !(s->expr && s->expr->type == EXPR_CONST_INDEX)) {
-                char upper[VMGEN_MAX_NAME];
-                make_upper(upper, spec->name, sizeof(upper));
-                vmgen_buf_appendf(buf, "%s%s_vm_push(vm, %s_INT64(",
-                                  indent, spec->name, upper);
-                emit_expr(buf, spec, s->expr);
-                vmgen_buf_append(buf, "));\n");
+            if (is_tagged_union(spec)) {
+                if (s->expr && (s->expr->type == EXPR_IDENT ||
+                                s->expr->type == EXPR_CONST_INDEX)) {
+                    /* Passthrough: value is already a tagged union */
+                    vmgen_buf_appendf(buf, "%s%s_vm_push(vm, ", indent, spec->name);
+                    emit_expr_ex(buf, spec, s->expr, 0);
+                    vmgen_buf_append(buf, ");\n");
+                } else {
+                    /* Arithmetic result: wrap in INT64 */
+                    char upper[VMGEN_MAX_NAME];
+                    make_upper(upper, spec->name, sizeof(upper));
+                    vmgen_buf_appendf(buf, "%s%s_vm_push(vm, %s_INT64(",
+                                      indent, spec->name, upper);
+                    emit_expr(buf, spec, s->expr);
+                    vmgen_buf_append(buf, "));\n");
+                }
             } else {
                 vmgen_buf_appendf(buf, "%s%s_vm_push(vm, ", indent, spec->name);
                 emit_expr(buf, spec, s->expr);
@@ -129,8 +154,8 @@ int vmgen_action_emit(vmgen_buf_t *buf, const char *indent,
 
         case ACT_PEEK:
             if (is_tagged_union(spec)) {
-                vmgen_buf_appendf(buf, "%s%s %s = vm->stack[vm->sp - 1].as.i64;\n",
-                                  indent, vtype, s->ident);
+                vmgen_buf_appendf(buf, "%s%s_value_t %s = vm->stack[vm->sp - 1];\n",
+                                  indent, spec->name, s->ident);
             } else {
                 vmgen_buf_appendf(buf, "%s%s %s = vm->stack[vm->sp - 1];\n",
                                   indent, vtype, s->ident);
@@ -144,13 +169,19 @@ int vmgen_action_emit(vmgen_buf_t *buf, const char *indent,
             break;
 
         case ACT_JUMP_IF_ZERO:
-            vmgen_buf_appendf(buf, "%sif (%s == 0) vm->ip += ", indent, s->ident);
+            if (is_tagged_union(spec))
+                vmgen_buf_appendf(buf, "%sif (%s.as.i64 == 0) vm->ip += ", indent, s->ident);
+            else
+                vmgen_buf_appendf(buf, "%sif (%s == 0) vm->ip += ", indent, s->ident);
             emit_expr(buf, spec, s->expr);
             vmgen_buf_append(buf, ";\n");
             break;
 
         case ACT_JUMP_IF_NONZERO:
-            vmgen_buf_appendf(buf, "%sif (%s != 0) vm->ip += ", indent, s->ident);
+            if (is_tagged_union(spec))
+                vmgen_buf_appendf(buf, "%sif (%s.as.i64 != 0) vm->ip += ", indent, s->ident);
+            else
+                vmgen_buf_appendf(buf, "%sif (%s != 0) vm->ip += ", indent, s->ident);
             emit_expr(buf, spec, s->expr);
             vmgen_buf_append(buf, ";\n");
             break;
@@ -213,8 +244,8 @@ int vmgen_action_emit(vmgen_buf_t *buf, const char *indent,
 
         case ACT_CATCH:
             if (is_tagged_union(spec)) {
-                vmgen_buf_appendf(buf, "%s%s %s = vm->current_exception.as.i64;\n",
-                                  indent, vtype, s->ident);
+                vmgen_buf_appendf(buf, "%s%s_value_t %s = vm->current_exception;\n",
+                                  indent, spec->name, s->ident);
             } else {
                 vmgen_buf_appendf(buf, "%s%s %s = vm->current_exception;\n",
                                   indent, vtype, s->ident);
@@ -226,10 +257,16 @@ int vmgen_action_emit(vmgen_buf_t *buf, const char *indent,
             make_upper(upper, spec->name, sizeof(upper));
             vmgen_buf_appendf(buf, "%s/* throw exception */\n", indent);
             if (is_tagged_union(spec)) {
-                vmgen_buf_appendf(buf, "%svm->current_exception = %s_INT64(",
-                                  indent, upper);
-                emit_expr(buf, spec, s->expr);
-                vmgen_buf_append(buf, ");\n");
+                if (s->expr && s->expr->type == EXPR_IDENT) {
+                    /* Passthrough: value is already a tagged union */
+                    vmgen_buf_appendf(buf, "%svm->current_exception = %s;\n",
+                                      indent, s->expr->u.ident);
+                } else {
+                    vmgen_buf_appendf(buf, "%svm->current_exception = %s_INT64(",
+                                      indent, upper);
+                    emit_expr(buf, spec, s->expr);
+                    vmgen_buf_append(buf, ");\n");
+                }
             } else {
                 vmgen_buf_appendf(buf, "%svm->current_exception = ", indent);
                 emit_expr(buf, spec, s->expr);
