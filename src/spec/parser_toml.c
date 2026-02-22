@@ -112,6 +112,9 @@ static void parse_features(toml_table_t *feat, vmgen_spec_t *spec) {
 
     d = toml_bool_in(feat, "nan_boxing");
     if (d.ok) spec->features.nan_boxing = d.u.b;
+
+    d = toml_bool_in(feat, "exception_handling");
+    if (d.ok) spec->features.exception_handling = d.u.b;
 }
 
 static void parse_operands(toml_array_t *arr, vmgen_instr_t *instr) {
@@ -178,6 +181,34 @@ static void parse_constants(toml_array_t *arr, vmgen_spec_t *spec) {
     }
 }
 
+static void parse_constant_pool(toml_table_t *pool, vmgen_spec_t *spec) {
+    toml_datum_t d;
+
+    d = toml_string_in(pool, "type");
+    if (d.ok) {
+        if (str_eq(d.u.s, "dynamic")) spec->pool.type = VMGEN_ALLOC_DYNAMIC;
+        else spec->pool.type = VMGEN_ALLOC_FIXED;
+        free(d.u.s);
+    }
+
+    d = toml_int_in(pool, "initial_capacity");
+    if (d.ok) spec->pool.initial_capacity = (int)d.u.i;
+}
+
+static void parse_frames(toml_table_t *frames, vmgen_spec_t *spec) {
+    toml_datum_t d;
+
+    d = toml_string_in(frames, "type");
+    if (d.ok) {
+        if (str_eq(d.u.s, "dynamic")) spec->frame.type = VMGEN_ALLOC_DYNAMIC;
+        else spec->frame.type = VMGEN_ALLOC_FIXED;
+        free(d.u.s);
+    }
+
+    d = toml_int_in(frames, "max_depth");
+    if (d.ok) spec->frame.max_depth = (int)d.u.i;
+}
+
 int vmgen_parse_spec_toml(const char *path, vmgen_spec_t *spec) {
     FILE *fp = fopen(path, "r");
     if (!fp) {
@@ -238,6 +269,14 @@ int vmgen_parse_spec_toml(const char *path, vmgen_spec_t *spec) {
     /* Constants */
     toml_array_t *consts = toml_array_in(vm, "constants");
     if (consts) parse_constants(consts, spec);
+
+    /* Constant pool config */
+    toml_table_t *pool = toml_table_in(vm, "constant_pool");
+    if (pool) parse_constant_pool(pool, spec);
+
+    /* Frames config */
+    toml_table_t *frames = toml_table_in(vm, "frames");
+    if (frames) parse_frames(frames, spec);
 
     toml_free(root);
     return 0;

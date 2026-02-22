@@ -131,24 +131,39 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
     }
 
     /* Constant pool */
-    vmgen_buf_appendf(&buf,
-        "#define %s_MAX_CONSTANTS 256\n\n"
-        "typedef struct {\n"
-        "    %s_value_t values[%s_MAX_CONSTANTS];\n"
-        "    int count;\n"
-        "} %s_const_pool_t;\n\n",
-        upper, spec->name, upper, spec->name);
+    if (spec->pool.type == VMGEN_ALLOC_DYNAMIC) {
+        vmgen_buf_appendf(&buf,
+            "typedef struct {\n"
+            "    %s_value_t *values;\n"
+            "    int count;\n"
+            "    int capacity;\n"
+            "} %s_const_pool_t;\n\n",
+            spec->name, spec->name);
+    } else {
+        vmgen_buf_appendf(&buf,
+            "#define %s_MAX_CONSTANTS %d\n\n"
+            "typedef struct {\n"
+            "    %s_value_t values[%s_MAX_CONSTANTS];\n"
+            "    int count;\n"
+            "} %s_const_pool_t;\n\n",
+            upper, spec->pool.initial_capacity,
+            spec->name, upper, spec->name);
+    }
 
     /* Call frame */
+    if (spec->frame.type != VMGEN_ALLOC_DYNAMIC) {
+        vmgen_buf_appendf(&buf,
+            "#define %s_MAX_FRAMES %d\n",
+            upper, spec->frame.max_depth);
+    }
     vmgen_buf_appendf(&buf,
-        "#define %s_MAX_FRAMES 64\n"
         "#define %s_MAX_BREAKPOINTS 32\n\n"
         "typedef struct {\n"
         "    size_t return_ip;\n"
         "    int base_sp;\n"
         "    uint16_t func_index;\n"
         "} %s_frame_t;\n\n",
-        upper, upper, spec->name);
+        upper, spec->name);
 
     /* Error handling */
     vmgen_buf_appendf(&buf,
@@ -161,27 +176,64 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "    %s_ERR_CONST_OVERFLOW,\n"
         "    %s_ERR_DIV_BY_ZERO,\n"
         "    %s_ERR_TYPE_MISMATCH,\n"
+        "    %s_ERR_UNHANDLED_EXCEPTION,\n"
         "} %s_error_t;\n\n"
         "/* Error handler callback: receives VM pointer, error code, and message */\n"
         "typedef void (*%s_error_handler_t)(void *vm, %s_error_t err, const char *msg);\n\n",
-        upper, upper, upper, upper, upper, upper, upper,
+        upper, upper, upper, upper, upper, upper, upper, upper,
         spec->name, spec->name, spec->name);
 
     /* VM state struct */
+    if (spec->features.exception_handling) {
+        vmgen_buf_appendf(&buf,
+            "#define %s_MAX_EXCEPTION_FRAMES 16\n\n"
+            "typedef struct {\n"
+            "    size_t handler_ip;\n"
+            "    int saved_sp;\n"
+            "    int saved_frame_count;\n"
+            "} %s_exception_frame_t;\n\n",
+            upper, spec->name);
+    }
+
     vmgen_buf_appendf(&buf,
         "typedef struct %s_vm {\n"
         "    const uint8_t *code;\n"
         "    size_t code_len;\n"
-        "    size_t ip;\n"
-        "    %s_value_t stack[%d];\n"
-        "    int sp;\n"
+        "    size_t ip;\n",
+        spec->name);
+
+    /* Stack — dynamic or fixed */
+    if (spec->stack.type == VMGEN_STACK_DYNAMIC) {
+        vmgen_buf_appendf(&buf,
+            "    %s_value_t *stack;\n"
+            "    int sp;\n"
+            "    int stack_capacity;\n",
+            spec->name);
+    } else {
+        vmgen_buf_appendf(&buf,
+            "    %s_value_t stack[%d];\n"
+            "    int sp;\n",
+            spec->name, spec->stack.max_depth);
+    }
+
+    vmgen_buf_appendf(&buf,
         "    int running;\n"
-        "    %s_const_pool_t constants;\n"
-        "    %s_frame_t frames[%s_MAX_FRAMES];\n"
-        "    int frame_count;\n",
-        spec->name,
-        spec->name, spec->stack.max_depth,
-        spec->name, spec->name, upper);
+        "    %s_const_pool_t constants;\n",
+        spec->name);
+
+    /* Frames — dynamic or fixed */
+    if (spec->frame.type == VMGEN_ALLOC_DYNAMIC) {
+        vmgen_buf_appendf(&buf,
+            "    %s_frame_t *frames;\n"
+            "    int frame_count;\n"
+            "    int frame_capacity;\n",
+            spec->name);
+    } else {
+        vmgen_buf_appendf(&buf,
+            "    %s_frame_t frames[%s_MAX_FRAMES];\n"
+            "    int frame_count;\n",
+            spec->name, upper);
+    }
 
     if (spec->features.debug_tracing) {
         vmgen_buf_append(&buf, "    int trace_enabled;\n");
@@ -201,11 +253,21 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "    void (*step_callback)(void *vm, size_t ip);\n",
         spec->name, spec->name, upper);
 
+    if (spec->features.exception_handling) {
+        vmgen_buf_appendf(&buf,
+            "    /* Exception handling */\n"
+            "    %s_exception_frame_t exception_frames[%s_MAX_EXCEPTION_FRAMES];\n"
+            "    int exception_count;\n"
+            "    %s_value_t current_exception;\n",
+            spec->name, upper, spec->name);
+    }
+
     vmgen_buf_appendf(&buf, "} %s_vm_t;\n\n", spec->name);
 
     /* API prototypes */
     vmgen_buf_appendf(&buf,
         "void %s_vm_init(%s_vm_t *vm);\n"
+        "void %s_vm_free(%s_vm_t *vm);\n"
         "int  %s_vm_run(%s_vm_t *vm, const uint8_t *code, size_t code_len);\n"
         "void %s_vm_push(%s_vm_t *vm, %s_value_t value);\n"
         "%s_value_t %s_vm_pop(%s_vm_t *vm);\n"
@@ -216,6 +278,7 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "int  %s_vm_set_breakpoint(%s_vm_t *vm, size_t offset);\n"
         "int  %s_vm_clear_breakpoint(%s_vm_t *vm, size_t offset);\n"
         "void %s_vm_set_step_callback(%s_vm_t *vm, void (*cb)(void *vm, size_t ip));\n",
+        spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name,
         spec->name, spec->name, spec->name,
@@ -500,6 +563,7 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
     vmgen_buf_append(&buf,
         "#include \"vm.h\"\n"
         "#include <stdio.h>\n"
+        "#include <stdlib.h>\n"
         "#include <string.h>\n");
 
     if (spec->features.debug_tracing) {
@@ -535,16 +599,42 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
         spec->name, spec->name, spec->name);
 
     /* Stack operations */
-    vmgen_buf_appendf(&buf,
-        "void %s_vm_push(%s_vm_t *vm, %s_value_t value) {\n"
-        "    if (vm->sp >= %d) {\n"
-        "        %s_vm_error(vm, %s_ERR_STACK_OVERFLOW, \"stack overflow\");\n"
-        "        return;\n"
-        "    }\n"
-        "    vm->stack[vm->sp++] = value;\n"
-        "}\n\n",
-        spec->name, spec->name, spec->name, spec->stack.max_depth,
-        spec->name, upper);
+    if (spec->stack.type == VMGEN_STACK_DYNAMIC) {
+        vmgen_buf_appendf(&buf,
+            "static void %s_vm_ensure_stack(%s_vm_t *vm, int needed) {\n"
+            "    if (needed <= vm->stack_capacity) return;\n"
+            "    int new_cap = vm->stack_capacity * 2;\n"
+            "    if (new_cap < needed) new_cap = needed;\n"
+            "    %s_value_t *tmp = (%s_value_t *)realloc(vm->stack,\n"
+            "        (size_t)new_cap * sizeof(%s_value_t));\n"
+            "    if (!tmp) {\n"
+            "        %s_vm_error(vm, %s_ERR_STACK_OVERFLOW, \"stack realloc failed\");\n"
+            "        return;\n"
+            "    }\n"
+            "    vm->stack = tmp;\n"
+            "    vm->stack_capacity = new_cap;\n"
+            "}\n\n"
+            "void %s_vm_push(%s_vm_t *vm, %s_value_t value) {\n"
+            "    %s_vm_ensure_stack(vm, vm->sp + 1);\n"
+            "    vm->stack[vm->sp++] = value;\n"
+            "}\n\n",
+            spec->name, spec->name,
+            spec->name, spec->name, spec->name,
+            spec->name, upper,
+            spec->name, spec->name, spec->name,
+            spec->name);
+    } else {
+        vmgen_buf_appendf(&buf,
+            "void %s_vm_push(%s_vm_t *vm, %s_value_t value) {\n"
+            "    if (vm->sp >= %d) {\n"
+            "        %s_vm_error(vm, %s_ERR_STACK_OVERFLOW, \"stack overflow\");\n"
+            "        return;\n"
+            "    }\n"
+            "    vm->stack[vm->sp++] = value;\n"
+            "}\n\n",
+            spec->name, spec->name, spec->name, spec->stack.max_depth,
+            spec->name, upper);
+    }
 
     vmgen_buf_appendf(&buf,
         "%s_value_t %s_vm_pop(%s_vm_t *vm) {\n"
@@ -568,23 +658,86 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
     /* vm_init */
     vmgen_buf_appendf(&buf,
         "void %s_vm_init(%s_vm_t *vm) {\n"
-        "    memset(vm, 0, sizeof(*vm));\n"
-        "}\n\n",
+        "    memset(vm, 0, sizeof(*vm));\n",
         spec->name, spec->name);
 
+    if (spec->stack.type == VMGEN_STACK_DYNAMIC) {
+        vmgen_buf_appendf(&buf,
+            "    vm->stack_capacity = %d;\n"
+            "    vm->stack = (%s_value_t *)calloc((size_t)vm->stack_capacity, sizeof(%s_value_t));\n",
+            spec->stack.max_depth, spec->name, spec->name);
+    }
+    if (spec->pool.type == VMGEN_ALLOC_DYNAMIC) {
+        vmgen_buf_appendf(&buf,
+            "    vm->constants.capacity = %d;\n"
+            "    vm->constants.values = (%s_value_t *)calloc((size_t)vm->constants.capacity, sizeof(%s_value_t));\n",
+            spec->pool.initial_capacity, spec->name, spec->name);
+    }
+    if (spec->frame.type == VMGEN_ALLOC_DYNAMIC) {
+        vmgen_buf_appendf(&buf,
+            "    vm->frame_capacity = %d;\n"
+            "    vm->frames = (%s_frame_t *)calloc((size_t)vm->frame_capacity, sizeof(%s_frame_t));\n",
+            spec->frame.max_depth, spec->name, spec->name);
+    }
+
+    vmgen_buf_append(&buf, "}\n\n");
+
     /* add_constant */
+    if (spec->pool.type == VMGEN_ALLOC_DYNAMIC) {
+        vmgen_buf_appendf(&buf,
+            "int %s_vm_add_constant(%s_vm_t *vm, %s_value_t value) {\n"
+            "    if (vm->constants.count >= vm->constants.capacity) {\n"
+            "        int new_cap = vm->constants.capacity * 2;\n"
+            "        if (new_cap < 16) new_cap = 16;\n"
+            "        %s_value_t *tmp = (%s_value_t *)realloc(vm->constants.values,\n"
+            "            (size_t)new_cap * sizeof(%s_value_t));\n"
+            "        if (!tmp) {\n"
+            "            %s_vm_error(vm, %s_ERR_CONST_OVERFLOW, \"constant pool realloc failed\");\n"
+            "            return -1;\n"
+            "        }\n"
+            "        vm->constants.values = tmp;\n"
+            "        vm->constants.capacity = new_cap;\n"
+            "    }\n"
+            "    int index = vm->constants.count;\n"
+            "    vm->constants.values[vm->constants.count++] = value;\n"
+            "    return index;\n"
+            "}\n\n",
+            spec->name, spec->name, spec->name,
+            spec->name, spec->name, spec->name,
+            spec->name, upper);
+    } else {
+        vmgen_buf_appendf(&buf,
+            "int %s_vm_add_constant(%s_vm_t *vm, %s_value_t value) {\n"
+            "    if (vm->constants.count >= %s_MAX_CONSTANTS) {\n"
+            "        %s_vm_error(vm, %s_ERR_CONST_OVERFLOW, \"constant pool overflow\");\n"
+            "        return -1;\n"
+            "    }\n"
+            "    int index = vm->constants.count;\n"
+            "    vm->constants.values[vm->constants.count++] = value;\n"
+            "    return index;\n"
+            "}\n\n",
+            spec->name, spec->name, spec->name, upper,
+            spec->name, upper);
+    }
+
+    /* vm_free */
     vmgen_buf_appendf(&buf,
-        "int %s_vm_add_constant(%s_vm_t *vm, %s_value_t value) {\n"
-        "    if (vm->constants.count >= %s_MAX_CONSTANTS) {\n"
-        "        %s_vm_error(vm, %s_ERR_CONST_OVERFLOW, \"constant pool overflow\");\n"
-        "        return -1;\n"
-        "    }\n"
-        "    int index = vm->constants.count;\n"
-        "    vm->constants.values[vm->constants.count++] = value;\n"
-        "    return index;\n"
-        "}\n\n",
-        spec->name, spec->name, spec->name, upper,
-        spec->name, upper);
+        "void %s_vm_free(%s_vm_t *vm) {\n",
+        spec->name, spec->name);
+
+    if (spec->stack.type == VMGEN_STACK_DYNAMIC) {
+        vmgen_buf_append(&buf, "    free(vm->stack);\n");
+    }
+    if (spec->pool.type == VMGEN_ALLOC_DYNAMIC) {
+        vmgen_buf_append(&buf, "    free(vm->constants.values);\n");
+    }
+    if (spec->frame.type == VMGEN_ALLOC_DYNAMIC) {
+        vmgen_buf_append(&buf, "    free(vm->frames);\n");
+    }
+
+    vmgen_buf_append(&buf,
+        "    memset(vm, 0, sizeof(*vm));\n"
+        "}\n\n");
 
     /* GC root scanning function (mark-sweep only) */
     if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {

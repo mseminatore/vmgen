@@ -94,8 +94,9 @@ int vmgen_gen_test(const vmgen_spec_t *spec, const char *output_dir) {
         "    %s_vm_init(&vm);\n"
         "    TEST_ASSERT(vm.sp == 0, \"vm init: sp should be 0\");\n"
         "    TEST_ASSERT(vm.ip == 0, \"vm init: ip should be 0\");\n"
+        "    %s_vm_free(&vm);\n"
         "}\n\n",
-        spec->name, spec->name);
+        spec->name, spec->name, spec->name);
 
     /* === Test: push/pop === */
     if (spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION) {
@@ -108,9 +109,10 @@ int vmgen_gen_test(const vmgen_spec_t *spec, const char *output_dir) {
             "    %s_value_t val = %s_vm_pop(&vm);\n"
             "    TEST_ASSERT(vm.sp == 0, \"pop: sp should be 0\");\n"
             "    TEST_ASSERT_INT(val.as.i64, 42, \"pop: value should be 42\");\n"
+            "    %s_vm_free(&vm);\n"
             "}\n\n",
             spec->name, spec->name, spec->name, NAME,
-            spec->name, spec->name);
+            spec->name, spec->name, spec->name);
     } else if (spec->stack.value_type == VMGEN_VALUE_DOUBLE) {
         vmgen_buf_appendf(&buf,
             "static void test_push_pop(void) {\n"
@@ -121,8 +123,9 @@ int vmgen_gen_test(const vmgen_spec_t *spec, const char *output_dir) {
             "    double val = %s_vm_pop(&vm);\n"
             "    TEST_ASSERT(vm.sp == 0, \"pop: sp should be 0\");\n"
             "    TEST_ASSERT(val == 42.0, \"pop: value should be 42.0\");\n"
+            "    %s_vm_free(&vm);\n"
             "}\n\n",
-            spec->name, spec->name, spec->name, spec->name);
+            spec->name, spec->name, spec->name, spec->name, spec->name);
     } else {
         vmgen_buf_appendf(&buf,
             "static void test_push_pop(void) {\n"
@@ -133,8 +136,9 @@ int vmgen_gen_test(const vmgen_spec_t *spec, const char *output_dir) {
             "    int64_t val = %s_vm_pop(&vm);\n"
             "    TEST_ASSERT(vm.sp == 0, \"pop: sp should be 0\");\n"
             "    TEST_ASSERT_INT(val, 42, \"pop: value should be 42\");\n"
+            "    %s_vm_free(&vm);\n"
             "}\n\n",
-            spec->name, spec->name, spec->name, spec->name);
+            spec->name, spec->name, spec->name, spec->name, spec->name);
     }
 
     /* === Test: constants === */

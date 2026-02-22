@@ -19,6 +19,10 @@ void test_parser(void) {
     TEST(spec.dispatch == VMGEN_DISPATCH_SWITCH);
     TEST(spec.instruction_count == 0);
     TEST(spec.name[0] == '\0');
+    TEST(spec.pool.type == VMGEN_ALLOC_FIXED);
+    TEST(spec.pool.initial_capacity == 256);
+    TEST(spec.frame.type == VMGEN_ALLOC_FIXED);
+    TEST(spec.frame.max_depth == 64);
 
     /* --- Validation: empty spec should fail --- */
     SUITE("Validation - Empty Spec");
@@ -125,10 +129,19 @@ void test_parser(void) {
     TESTEX("full coroutines on", full.features.coroutines == 1);
     TESTEX("full debug_tracing on", full.features.debug_tracing == 1);
     TESTEX("full dispatch auto", full.dispatch == VMGEN_DISPATCH_AUTO);
-    TESTEX("full has 13 instructions", full.instruction_count == 13);
+    TESTEX("full has 17 instructions", full.instruction_count == 17);
     TESTEX("full CALL has 2 operands", full.instructions[10].operand_count == 2);
     TESTEX("full CALL arity is uint8", full.instructions[10].operands[1].type == VMGEN_OPERAND_UINT8);
     TESTEX("full has 3 const types", full.const_flags == (VMGEN_CONST_INT64 | VMGEN_CONST_DOUBLE | VMGEN_CONST_STRING));
+
+    TESTEX("full pool is dynamic", full.pool.type == VMGEN_ALLOC_DYNAMIC);
+    TESTEX("full pool capacity 256", full.pool.initial_capacity == 256);
+    TESTEX("full frame is dynamic", full.frame.type == VMGEN_ALLOC_DYNAMIC);
+    TESTEX("full frame depth 64", full.frame.max_depth == 64);
+    TESTEX("full exception_handling on", full.features.exception_handling == 1);
+    TESTEX("TRY_BEGIN is instruction 13", strcmp(full.instructions[13].name, "TRY_BEGIN") == 0);
+    TESTEX("THROW is instruction 16", strcmp(full.instructions[16].name, "THROW") == 0);
+
     TESTEX("full spec validates", vmgen_validate_spec(&full) == 0);
     vmgen_spec_free(&full);
 

@@ -8,6 +8,10 @@ void vmgen_spec_init(vmgen_spec_t *spec) {
     spec->stack.max_depth = 1024;
     spec->stack.value_type = VMGEN_VALUE_TAGGED_UNION;
     spec->dispatch = VMGEN_DISPATCH_SWITCH;
+    spec->pool.type = VMGEN_ALLOC_FIXED;
+    spec->pool.initial_capacity = 256;
+    spec->frame.type = VMGEN_ALLOC_FIXED;
+    spec->frame.max_depth = 64;
 }
 
 void vmgen_spec_free(vmgen_spec_t *spec) {

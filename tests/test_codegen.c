@@ -239,6 +239,74 @@ void test_codegen(void) {
         free(content);
     }
 
+    /* --- vm_free generation --- */
+    SUITE("Generate vm_free (fixed alloc)");
+    ospec.dispatch = VMGEN_DISPATCH_SWITCH;
+    rc = vmgen_gen_vm(&ospec, "test_output");
+    TESTEX("gen_vm fixed succeeds", rc == 0);
+
+    content = read_file("test_output/vm.h");
+    TESTEX("vm.h created", content != NULL);
+    if (content) {
+        TESTEX("vm.h has vm_free proto", strstr(content, "testvm_vm_free") != NULL);
+        free(content);
+    }
+
+    content = read_file("test_output/vm.c");
+    TESTEX("vm.c created", content != NULL);
+    if (content) {
+        TESTEX("vm.c has vm_free impl", strstr(content, "void testvm_vm_free(") != NULL);
+        free(content);
+    }
+
+    /* --- Dynamic allocation generation --- */
+    MODULE("Dynamic Allocation Generation");
+
+    SUITE("Generate vm with dynamic stack/pool/frames");
+    {
+        vmgen_spec_t dspec;
+        make_test_spec(&dspec);
+        dspec.stack.type = VMGEN_STACK_DYNAMIC;
+        dspec.pool.type = VMGEN_ALLOC_DYNAMIC;
+        dspec.pool.initial_capacity = 128;
+        dspec.frame.type = VMGEN_ALLOC_DYNAMIC;
+        dspec.frame.max_depth = 32;
+
+        MKDIR("test_output");
+        rc = vmgen_gen_vm(&dspec, "test_output");
+        TESTEX("gen_vm dynamic succeeds", rc == 0);
+
+        content = read_file("test_output/vm.h");
+        TESTEX("vm.h created", content != NULL);
+        if (content) {
+            TESTEX("vm.h has stack pointer", strstr(content, "testvm_value_t *stack;") != NULL);
+            TESTEX("vm.h has stack_capacity", strstr(content, "stack_capacity") != NULL);
+            TESTEX("vm.h has pool pointer", strstr(content, "testvm_value_t *values;") != NULL);
+            TESTEX("vm.h has pool capacity", strstr(content, "capacity") != NULL);
+            TESTEX("vm.h has frame pointer", strstr(content, "testvm_frame_t *frames;") != NULL);
+            TESTEX("vm.h has frame_capacity", strstr(content, "frame_capacity") != NULL);
+            TESTEX("vm.h no MAX_CONSTANTS", strstr(content, "TESTVM_MAX_CONSTANTS") == NULL);
+            TESTEX("vm.h no MAX_FRAMES", strstr(content, "TESTVM_MAX_FRAMES") == NULL);
+            free(content);
+        }
+
+        content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c has calloc for stack", strstr(content, "calloc") != NULL);
+            TESTEX("vm.c has realloc for stack", strstr(content, "realloc") != NULL);
+            TESTEX("vm.c has ensure_stack", strstr(content, "testvm_vm_ensure_stack") != NULL);
+            TESTEX("vm.c has free in vm_free", strstr(content, "free(vm->stack)") != NULL);
+            TESTEX("vm.c has free constants", strstr(content, "free(vm->constants.values)") != NULL);
+            TESTEX("vm.c has free frames", strstr(content, "free(vm->frames)") != NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&dspec);
+    }
+
     /* --- Disassembler generation --- */
     MODULE("Disassembler Generation");
 
@@ -762,6 +830,34 @@ void test_actions(void) {
         vmgen_action_free(&action);
     }
 
+    SUITE("Parse exception handling actions");
+    {
+        vmgen_action_t action;
+        int rc = vmgen_action_parse("try_begin $handler_offset", &action);
+        TESTEX("parse try_begin succeeds", rc == 0);
+        TESTEX("stmt is TRY_BEGIN", action.stmts[0].type == ACT_TRY_BEGIN);
+        TESTEX("try_begin has expr", action.stmts[0].expr != NULL);
+        vmgen_action_free(&action);
+
+        rc = vmgen_action_parse("try_end", &action);
+        TESTEX("parse try_end succeeds", rc == 0);
+        TESTEX("stmt is TRY_END", action.stmts[0].type == ACT_TRY_END);
+        vmgen_action_free(&action);
+
+        rc = vmgen_action_parse("catch ex", &action);
+        TESTEX("parse catch succeeds", rc == 0);
+        TESTEX("stmt is CATCH", action.stmts[0].type == ACT_CATCH);
+        TESTEX("catch ident is 'ex'", strcmp(action.stmts[0].ident, "ex") == 0);
+        vmgen_action_free(&action);
+
+        rc = vmgen_action_parse("pop ex; throw ex", &action);
+        TESTEX("parse throw succeeds", rc == 0);
+        TESTEX("has 2 statements", action.count == 2);
+        TESTEX("stmt 1 is THROW", action.stmts[1].type == ACT_THROW);
+        TESTEX("throw has expr", action.stmts[1].expr != NULL);
+        vmgen_action_free(&action);
+    }
+
     SUITE("Empty action");
     {
         vmgen_action_t action;
@@ -1088,6 +1184,85 @@ void test_actions(void) {
         if (content) {
             TESTEX("vm.c has no mark_roots", strstr(content, "mark_roots") == NULL);
             free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    /* --- Exception handling codegen --- */
+    MODULE("Exception Handling Generation");
+
+    SUITE("Exception-enabled VM has exception frames");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.stack.value_type = VMGEN_VALUE_TAGGED_UNION;
+        spec.features.exception_handling = true;
+
+        /* Add TRY_BEGIN instruction */
+        int idx = spec.instruction_count;
+        snprintf(spec.instructions[idx].name, VMGEN_MAX_NAME, "TRY_BEGIN");
+        spec.instructions[idx].operand_count = 1;
+        snprintf(spec.instructions[idx].operands[0].name, VMGEN_MAX_NAME, "handler_offset");
+        spec.instructions[idx].operands[0].type = VMGEN_OPERAND_INT16;
+        spec.instructions[idx].action = vmgen_strdup("try_begin $handler_offset");
+        spec.instruction_count++;
+
+        /* Add THROW instruction */
+        idx = spec.instruction_count;
+        snprintf(spec.instructions[idx].name, VMGEN_MAX_NAME, "THROW");
+        spec.instructions[idx].operand_count = 0;
+        spec.instructions[idx].action = vmgen_strdup("pop ex; throw ex");
+        spec.instruction_count++;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm with exceptions succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("vm.h has exception_frame_t", strstr(hdr, "testvm_exception_frame_t") != NULL);
+            TESTEX("vm.h has exception_frames array", strstr(hdr, "exception_frames") != NULL);
+            TESTEX("vm.h has exception_count", strstr(hdr, "exception_count") != NULL);
+            TESTEX("vm.h has current_exception", strstr(hdr, "current_exception") != NULL);
+            TESTEX("vm.h has ERR_UNHANDLED_EXCEPTION", strstr(hdr, "ERR_UNHANDLED_EXCEPTION") != NULL);
+            free(hdr);
+        }
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c has exception frame push", strstr(content, "exception_frames[vm->exception_count]") != NULL);
+            TESTEX("vm.c has handler_ip", strstr(content, "handler_ip") != NULL);
+            TESTEX("vm.c has saved_sp", strstr(content, "saved_sp") != NULL);
+            TESTEX("vm.c has unhandled error", strstr(content, "unhandled exception") != NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("No-exception VM has no exception frames");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.exception_handling = false;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm without exceptions succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("vm.h has no exception_frame_t", strstr(hdr, "exception_frame_t") == NULL);
+            TESTEX("vm.h has no exception_count", strstr(hdr, "exception_count") == NULL);
+            free(hdr);
         }
 
         remove("test_output/vm.h");

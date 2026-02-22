@@ -43,6 +43,12 @@ typedef struct {
     bool stack_effect_set;              /* whether stack_effect was explicitly declared */
 } vmgen_instr_t;
 
+/* Allocation strategy (shared by stack, constant pool, frames) */
+typedef enum {
+    VMGEN_ALLOC_FIXED,
+    VMGEN_ALLOC_DYNAMIC,
+} vmgen_alloc_type_t;
+
 /* Stack configuration */
 typedef enum {
     VMGEN_STACK_FIXED,
@@ -60,6 +66,18 @@ typedef struct {
     int max_depth;
     vmgen_value_type_t value_type;
 } vmgen_stack_config_t;
+
+/* Constant pool configuration */
+typedef struct {
+    vmgen_alloc_type_t type;
+    int initial_capacity;
+} vmgen_pool_config_t;
+
+/* Frame stack configuration */
+typedef struct {
+    vmgen_alloc_type_t type;
+    int max_depth;
+} vmgen_frame_config_t;
 
 /* GC strategy */
 typedef enum {
@@ -114,6 +132,7 @@ typedef struct {
     bool coroutines;
     bool debug_tracing;
     bool nan_boxing;
+    bool exception_handling;
 } vmgen_features_t;
 
 /* Top-level spec */
@@ -122,6 +141,8 @@ typedef struct {
     char version[VMGEN_MAX_VERSION];
 
     vmgen_stack_config_t stack;
+    vmgen_pool_config_t pool;
+    vmgen_frame_config_t frame;
     uint32_t type_flags;       /* vmgen_type_flags_t bitmask */
     vmgen_features_t features;
     vmgen_dispatch_t dispatch;

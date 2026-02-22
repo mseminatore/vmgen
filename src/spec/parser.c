@@ -298,6 +298,12 @@ static void parse_features(parse_ctx_t *ctx) {
             if (!expect_scalar(ctx, &v)) return;
             ctx->spec->features.nan_boxing = parse_bool(event_scalar(&v));
             yaml_event_delete(&v);
+        } else if (str_eq(key, "exception_handling")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!expect_scalar(ctx, &v)) return;
+            ctx->spec->features.exception_handling = parse_bool(event_scalar(&v));
+            yaml_event_delete(&v);
         } else {
             yaml_event_delete(&e);
             skip_value(ctx);
@@ -459,6 +465,66 @@ static void parse_constants(parse_ctx_t *ctx) {
     }
 }
 
+static void parse_constant_pool(parse_ctx_t *ctx) {
+    yaml_event_t e;
+    while (!ctx->error) {
+        if (!next_event(ctx, &e)) return;
+        if (e.type == YAML_MAPPING_END_EVENT) { yaml_event_delete(&e); return; }
+        if (e.type != YAML_SCALAR_EVENT) { yaml_event_delete(&e); continue; }
+
+        const char *key = event_scalar(&e);
+        if (str_eq(key, "type")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!expect_scalar(ctx, &v)) return;
+            if (str_eq(event_scalar(&v), "dynamic"))
+                ctx->spec->pool.type = VMGEN_ALLOC_DYNAMIC;
+            else
+                ctx->spec->pool.type = VMGEN_ALLOC_FIXED;
+            yaml_event_delete(&v);
+        } else if (str_eq(key, "initial_capacity")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!expect_scalar(ctx, &v)) return;
+            ctx->spec->pool.initial_capacity = atoi(event_scalar(&v));
+            yaml_event_delete(&v);
+        } else {
+            yaml_event_delete(&e);
+            skip_value(ctx);
+        }
+    }
+}
+
+static void parse_frames(parse_ctx_t *ctx) {
+    yaml_event_t e;
+    while (!ctx->error) {
+        if (!next_event(ctx, &e)) return;
+        if (e.type == YAML_MAPPING_END_EVENT) { yaml_event_delete(&e); return; }
+        if (e.type != YAML_SCALAR_EVENT) { yaml_event_delete(&e); continue; }
+
+        const char *key = event_scalar(&e);
+        if (str_eq(key, "type")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!expect_scalar(ctx, &v)) return;
+            if (str_eq(event_scalar(&v), "dynamic"))
+                ctx->spec->frame.type = VMGEN_ALLOC_DYNAMIC;
+            else
+                ctx->spec->frame.type = VMGEN_ALLOC_FIXED;
+            yaml_event_delete(&v);
+        } else if (str_eq(key, "max_depth")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!expect_scalar(ctx, &v)) return;
+            ctx->spec->frame.max_depth = atoi(event_scalar(&v));
+            yaml_event_delete(&v);
+        } else {
+            yaml_event_delete(&e);
+            skip_value(ctx);
+        }
+    }
+}
+
 static void parse_vm(parse_ctx_t *ctx) {
     yaml_event_t e;
     while (!ctx->error) {
@@ -540,6 +606,26 @@ static void parse_vm(parse_ctx_t *ctx) {
             if (v.type == YAML_SEQUENCE_START_EVENT) {
                 yaml_event_delete(&v);
                 parse_constants(ctx);
+            } else {
+                yaml_event_delete(&v);
+            }
+        } else if (str_eq(key, "constant_pool")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!next_event(ctx, &v)) return;
+            if (v.type == YAML_MAPPING_START_EVENT) {
+                yaml_event_delete(&v);
+                parse_constant_pool(ctx);
+            } else {
+                yaml_event_delete(&v);
+            }
+        } else if (str_eq(key, "frames")) {
+            yaml_event_delete(&e);
+            yaml_event_t v;
+            if (!next_event(ctx, &v)) return;
+            if (v.type == YAML_MAPPING_START_EVENT) {
+                yaml_event_delete(&v);
+                parse_frames(ctx);
             } else {
                 yaml_event_delete(&v);
             }

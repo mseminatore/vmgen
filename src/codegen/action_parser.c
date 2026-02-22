@@ -415,6 +415,33 @@ static int parse_statement(lexer_t *l, vmgen_act_stmt_t *stmt) {
         return stmt->expr ? 0 : -1;
     }
 
+    if (strcmp(l->cur.text, "try_begin") == 0) {
+        lex_next(l);
+        stmt->type = ACT_TRY_BEGIN;
+        stmt->expr = parse_expr(l);
+        return stmt->expr ? 0 : -1;
+    }
+
+    if (strcmp(l->cur.text, "try_end") == 0) {
+        lex_next(l);
+        stmt->type = ACT_TRY_END;
+        return 0;
+    }
+
+    if (strcmp(l->cur.text, "catch") == 0) {
+        lex_next(l);
+        stmt->type = ACT_CATCH;
+        if (!expect_ident(l, stmt->ident, 64)) return -1;
+        return 0;
+    }
+
+    if (strcmp(l->cur.text, "throw") == 0) {
+        lex_next(l);
+        stmt->type = ACT_THROW;
+        stmt->expr = parse_expr(l);
+        return stmt->expr ? 0 : -1;
+    }
+
     snprintf(l->error, sizeof(l->error), "unknown keyword '%s'", l->cur.text);
     return -1;
 }

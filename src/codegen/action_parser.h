@@ -15,6 +15,10 @@ typedef enum {
     ACT_RETURN,         /* return */
     ACT_CALL,           /* call <expr> <expr> */
     ACT_SET,            /* set <ident> = <expr> */
+    ACT_TRY_BEGIN,      /* try_begin <expr> (handler offset) */
+    ACT_TRY_END,        /* try_end */
+    ACT_CATCH,          /* catch <ident> */
+    ACT_THROW,          /* throw <expr> */
 } vmgen_act_type_t;
 
 /* Expression node types */

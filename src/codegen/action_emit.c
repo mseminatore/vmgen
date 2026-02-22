@@ -190,6 +190,69 @@ int vmgen_action_emit(vmgen_buf_t *buf, const char *indent,
             emit_expr(buf, spec, s->expr);
             vmgen_buf_append(buf, ";\n");
             break;
+
+        case ACT_TRY_BEGIN: {
+            char upper[VMGEN_MAX_NAME];
+            make_upper(upper, spec->name, sizeof(upper));
+            vmgen_buf_appendf(buf, "%s/* push exception frame */\n", indent);
+            vmgen_buf_appendf(buf, "%svm->exception_frames[vm->exception_count].handler_ip = vm->ip + ",
+                              indent);
+            emit_expr(buf, spec, s->expr);
+            vmgen_buf_append(buf, ";\n");
+            vmgen_buf_appendf(buf,
+                "%svm->exception_frames[vm->exception_count].saved_sp = vm->sp;\n"
+                "%svm->exception_frames[vm->exception_count].saved_frame_count = vm->frame_count;\n"
+                "%svm->exception_count++;\n",
+                indent, indent, indent);
+            break;
+        }
+
+        case ACT_TRY_END:
+            vmgen_buf_appendf(buf,
+                "%s/* pop exception frame */\n"
+                "%sif (vm->exception_count > 0) vm->exception_count--;\n",
+                indent, indent);
+            break;
+
+        case ACT_CATCH:
+            if (is_tagged_union(spec)) {
+                vmgen_buf_appendf(buf, "%s%s %s = vm->current_exception.as.i64;\n",
+                                  indent, vtype, s->ident);
+            } else {
+                vmgen_buf_appendf(buf, "%s%s %s = vm->current_exception;\n",
+                                  indent, vtype, s->ident);
+            }
+            break;
+
+        case ACT_THROW: {
+            char upper[VMGEN_MAX_NAME];
+            make_upper(upper, spec->name, sizeof(upper));
+            vmgen_buf_appendf(buf, "%s/* throw exception */\n", indent);
+            if (is_tagged_union(spec)) {
+                vmgen_buf_appendf(buf, "%svm->current_exception = %s_INT64(",
+                                  indent, upper);
+                emit_expr(buf, spec, s->expr);
+                vmgen_buf_append(buf, ");\n");
+            } else {
+                vmgen_buf_appendf(buf, "%svm->current_exception = ", indent);
+                emit_expr(buf, spec, s->expr);
+                vmgen_buf_append(buf, ";\n");
+            }
+            vmgen_buf_appendf(buf,
+                "%sif (vm->exception_count > 0) {\n"
+                "%s    vm->exception_count--;\n"
+                "%s    vm->sp = vm->exception_frames[vm->exception_count].saved_sp;\n"
+                "%s    vm->frame_count = vm->exception_frames[vm->exception_count].saved_frame_count;\n"
+                "%s    vm->ip = vm->exception_frames[vm->exception_count].handler_ip;\n"
+                "%s} else {\n"
+                "%s    %s_vm_error(vm, %s_ERR_UNHANDLED_EXCEPTION, \"unhandled exception\");\n"
+                "%s    return -1;\n"
+                "%s}\n",
+                indent, indent, indent, indent, indent,
+                indent, indent, spec->name, upper,
+                indent, indent);
+            break;
+        }
         }
     }
     return 0;

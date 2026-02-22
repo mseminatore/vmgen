@@ -64,6 +64,12 @@
             "enum": ["int64", "double", "string"]
           },
           "uniqueItems": true
+        },
+        "constant_pool": {
+          "$ref": "#/$defs/constant_pool"
+        },
+        "frames": {
+          "$ref": "#/$defs/frames"
         }
       }
     }
@@ -160,6 +166,11 @@
           "type": "boolean",
           "description": "Enable NaN-boxed value representation (not yet implemented)",
           "default": false
+        },
+        "exception_handling": {
+          "type": "boolean",
+          "description": "Enable exception handling with TRY_BEGIN, TRY_END, CATCH, and THROW opcodes",
+          "default": false
         }
       }
     },
@@ -224,6 +235,46 @@
           "type": "string",
           "description": "Operand data type and byte size",
           "enum": ["uint8", "uint16", "int16", "uint32"]
+        }
+      }
+    },
+    "constant_pool": {
+      "type": "object",
+      "description": "Constant pool allocation configuration",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Allocation strategy for the constant pool",
+          "enum": ["fixed", "dynamic"],
+          "default": "fixed"
+        },
+        "initial_capacity": {
+          "type": "integer",
+          "description": "Initial capacity (fixed: max size, dynamic: starting size before realloc)",
+          "minimum": 1,
+          "maximum": 65536,
+          "default": 256
+        }
+      }
+    },
+    "frames": {
+      "type": "object",
+      "description": "Call frame stack configuration",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Allocation strategy for the frame stack",
+          "enum": ["fixed", "dynamic"],
+          "default": "fixed"
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Maximum frame depth (fixed: array size, dynamic: starting capacity)",
+          "minimum": 1,
+          "maximum": 65536,
+          "default": 64
         }
       }
     }

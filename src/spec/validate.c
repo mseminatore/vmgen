@@ -119,6 +119,29 @@ int vmgen_validate_spec(const vmgen_spec_t *spec) {
         errors++;
     }
 
+    /* Constant pool capacity sanity */
+    if (spec->pool.initial_capacity <= 0) {
+        fprintf(stderr,
+                "vmgen: spec error: constant_pool.initial_capacity must be positive\n");
+        errors++;
+    }
+
+    /* Frame stack depth sanity */
+    if (spec->frame.max_depth <= 0) {
+        fprintf(stderr,
+                "vmgen: spec error: frames.max_depth must be positive\n");
+        errors++;
+    }
+
+    /* Exception handling needs tagged_union for exception values */
+    if (spec->features.exception_handling &&
+        spec->stack.value_type != VMGEN_VALUE_TAGGED_UNION) {
+        fprintf(stderr,
+                "vmgen: spec warning: exception_handling works best with "
+                "value_type 'tagged_union'\n");
+        warnings++;
+    }
+
     (void)warnings;
     return errors > 0 ? -1 : 0;
 }

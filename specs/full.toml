@@ -5,6 +5,14 @@ dispatch = "auto"
 types = ["int64", "double", "bool", "string", "object"]
 constants = ["int64", "double", "string"]
 
+[vm.constant_pool]
+type = "dynamic"
+initial_capacity = 256
+
+[vm.frames]
+type = "dynamic"
+max_depth = 64
+
 [vm.stack]
 type = "dynamic"
 max_depth = 4096
@@ -16,6 +24,7 @@ closures = true
 coroutines = true
 debug_tracing = true
 nan_boxing = false
+exception_handling = true
 
 [vm.features.garbage_collection]
 enabled = true
@@ -107,4 +116,28 @@ operands = []
 name = "HALT"
 description = "Stop execution"
 action = "halt"
+operands = []
+
+[[vm.instructions]]
+name = "TRY_BEGIN"
+description = "Begin try block; handler at ip + offset"
+action = "try_begin $handler_offset"
+operands = [{name = "handler_offset", type = "int16"}]
+
+[[vm.instructions]]
+name = "TRY_END"
+description = "End try block; pop exception frame"
+action = "try_end"
+operands = []
+
+[[vm.instructions]]
+name = "CATCH"
+description = "Catch exception; push exception value"
+action = "catch ex; push ex"
+operands = []
+
+[[vm.instructions]]
+name = "THROW"
+description = "Throw top of stack as exception"
+action = "pop ex; throw ex"
 operands = []

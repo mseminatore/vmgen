@@ -215,10 +215,16 @@ int vmgen_gen_optimizer(const vmgen_spec_t *spec, const char *output_dir) {
         vmgen_buf_append(&src, "        }\n");
 
         /* Rewrite if matched */
-        vmgen_buf_appendf(&src,
-            "        if (matched && constants->count < %s_MAX_CONSTANTS) {\n"
-            "            int new_idx = constants->count;\n",
-            upper);
+        if (spec->pool.type == VMGEN_ALLOC_DYNAMIC) {
+            vmgen_buf_append(&src,
+                "        if (matched && constants->count < constants->capacity) {\n"
+                "            int new_idx = constants->count;\n");
+        } else {
+            vmgen_buf_appendf(&src,
+                "        if (matched && constants->count < %s_MAX_CONSTANTS) {\n"
+                "            int new_idx = constants->count;\n",
+                upper);
+        }
 
         if (spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION) {
             vmgen_buf_appendf(&src,
