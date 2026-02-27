@@ -84,6 +84,17 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
     }
     vmgen_buf_appendc(&buf, '\n');
 
+    /* Forward declarations for closure types (pointer-only use in VM struct) */
+    if (spec->features.closures) {
+        vmgen_buf_appendf(&buf,
+            "struct %s_upvalue;\n"
+            "typedef struct %s_upvalue %s_upvalue_t;\n"
+            "struct %s_closure;\n"
+            "typedef struct %s_closure %s_closure_t;\n\n",
+            spec->name, spec->name, spec->name,
+            spec->name, spec->name, spec->name);
+    }
+
     /* Value type */
     if (spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION) {
         int has_string = (spec->type_flags & VMGEN_TYPE_STRING) != 0;
@@ -644,6 +655,9 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
 
     if (spec->features.debug_tracing) {
         vmgen_buf_append(&buf, "#include \"disasm.h\"\n");
+    }
+    if (spec->features.closures) {
+        vmgen_buf_append(&buf, "#include \"closures.h\"\n");
     }
 
     vmgen_buf_append(&buf, "\n");

@@ -34,7 +34,8 @@ int vmgen_gen_closures(const vmgen_spec_t *spec, const char *output_dir) {
 
     vmgen_buf_append(&buf,
         "#include <stdint.h>\n"
-        "#include <stddef.h>\n");
+        "#include <stddef.h>\n"
+        "#include \"vm.h\"\n");
     if (spec->features.gc_enabled) {
         vmgen_buf_append(&buf, "#include \"gc.h\"\n");
     }
@@ -46,15 +47,15 @@ int vmgen_gen_closures(const vmgen_spec_t *spec, const char *output_dir) {
         vmgen_buf_appendf(&buf, "    %s_obj_t obj;\n", spec->name);
     }
     vmgen_buf_appendf(&buf,
-        "    int64_t *location;\n"
-        "    int64_t closed;\n"
+        "    %s_value_t *location;\n"
+        "    %s_value_t closed;\n"
         "    int is_closed;\n"
         "    struct %s_upvalue *next;\n"
         "} %s_upvalue_t;\n\n",
-        spec->name, spec->name);
+        spec->name, spec->name, spec->name, spec->name);
 
     /* Closure struct (with optional GC header) */
-    vmgen_buf_appendf(&buf, "typedef struct {\n");
+    vmgen_buf_appendf(&buf, "typedef struct %s_closure {\n", spec->name);
     if (spec->features.gc_enabled) {
         vmgen_buf_appendf(&buf, "    %s_obj_t obj;\n", spec->name);
     }
@@ -77,12 +78,12 @@ int vmgen_gen_closures(const vmgen_spec_t *spec, const char *output_dir) {
     }
     vmgen_buf_appendf(&buf,
         "void %s_free_closure(%s_closure_t *closure);\n"
-        "int64_t %s_get_upvalue(%s_closure_t *closure, int index);\n"
-        "void %s_set_upvalue(%s_closure_t *closure, int index, int64_t value);\n"
+        "%s_value_t %s_get_upvalue(%s_closure_t *closure, int index);\n"
+        "void %s_set_upvalue(%s_closure_t *closure, int index, %s_value_t value);\n"
         "void %s_close_upvalue(%s_upvalue_t *upvalue);\n",
         spec->name, spec->name,
-        spec->name, spec->name,
-        spec->name, spec->name,
+        spec->name, spec->name, spec->name,
+        spec->name, spec->name, spec->name,
         spec->name, spec->name);
     if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
         vmgen_buf_appendf(&buf,
@@ -127,7 +128,7 @@ int vmgen_gen_closures(const vmgen_spec_t *spec, const char *output_dir) {
             "                gc, %s_OBJ_UPVALUE, sizeof(%s_upvalue_t));\n"
             "            if (!closure->upvalues[i]) return -1;\n"
             "            closure->upvalues[i]->location = NULL;\n"
-            "            closure->upvalues[i]->closed = 0;\n"
+            "            closure->upvalues[i]->closed = (%s_value_t){0};\n"
             "            closure->upvalues[i]->is_closed = 0;\n"
             "            closure->upvalues[i]->next = NULL;\n"
             "        }\n"
@@ -137,7 +138,7 @@ int vmgen_gen_closures(const vmgen_spec_t *spec, const char *output_dir) {
             spec->name, spec->name, spec->name,
             spec->name, spec->name,
             spec->name, spec->name,
-            upper, spec->name);
+            upper, spec->name, spec->name);
     } else {
         vmgen_buf_appendf(&buf,
             "int %s_init_closure(%s_closure_t *closure, uint16_t fn_index, int upvalue_count) {\n"
@@ -168,21 +169,21 @@ int vmgen_gen_closures(const vmgen_spec_t *spec, const char *output_dir) {
 
     /* get_upvalue */
     vmgen_buf_appendf(&buf,
-        "int64_t %s_get_upvalue(%s_closure_t *closure, int index) {\n"
+        "%s_value_t %s_get_upvalue(%s_closure_t *closure, int index) {\n"
         "    if (index < 0 || index >= closure->upvalue_count || !closure->upvalues[index])\n"
-        "        return 0;\n"
+        "        return (%s_value_t){0};\n"
         "    return *closure->upvalues[index]->location;\n"
         "}\n\n",
-        spec->name, spec->name);
+        spec->name, spec->name, spec->name, spec->name);
 
     /* set_upvalue */
     vmgen_buf_appendf(&buf,
-        "void %s_set_upvalue(%s_closure_t *closure, int index, int64_t value) {\n"
+        "void %s_set_upvalue(%s_closure_t *closure, int index, %s_value_t value) {\n"
         "    if (index < 0 || index >= closure->upvalue_count || !closure->upvalues[index])\n"
         "        return;\n"
         "    *closure->upvalues[index]->location = value;\n"
         "}\n\n",
-        spec->name, spec->name);
+        spec->name, spec->name, spec->name);
 
     /* close_upvalue */
     vmgen_buf_appendf(&buf,

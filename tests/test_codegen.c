@@ -426,6 +426,7 @@ void test_codegen(void) {
         TESTEX("closures.h created", content != NULL);
         if (content) {
             TESTEX("closures.h has guard", strstr(content, "#ifndef TESTVM_CLOSURES_H") != NULL);
+            TESTEX("closures.h includes vm.h", strstr(content, "#include \"vm.h\"") != NULL);
             TESTEX("closures.h has upvalue_t", strstr(content, "testvm_upvalue_t") != NULL);
             TESTEX("closures.h has closure_t", strstr(content, "testvm_closure_t") != NULL);
             TESTEX("closures.h has is_closed", strstr(content, "is_closed") != NULL);
@@ -433,6 +434,10 @@ void test_codegen(void) {
             TESTEX("closures.h has get_upvalue", strstr(content, "testvm_get_upvalue") != NULL);
             TESTEX("closures.h has set_upvalue", strstr(content, "testvm_set_upvalue") != NULL);
             TESTEX("closures.h has close_upvalue", strstr(content, "testvm_close_upvalue") != NULL);
+            TESTEX("closures.h uses value_t for location", strstr(content, "testvm_value_t *location") != NULL);
+            TESTEX("closures.h uses value_t for closed", strstr(content, "testvm_value_t closed") != NULL);
+            TESTEX("closures.h get_upvalue returns value_t", strstr(content, "testvm_value_t testvm_get_upvalue") != NULL);
+            TESTEX("closures.h set_upvalue takes value_t", strstr(content, "testvm_value_t value") != NULL);
             free(content);
         }
 
@@ -444,6 +449,8 @@ void test_codegen(void) {
             TESTEX("closures.c has free_closure impl", strstr(content, "testvm_free_closure") != NULL);
             TESTEX("closures.c has upvalue alloc", strstr(content, "calloc") != NULL);
             TESTEX("closures.c has close logic", strstr(content, "upvalue->location = &upvalue->closed") != NULL);
+            TESTEX("closures.c get_upvalue uses value_t", strstr(content, "testvm_value_t testvm_get_upvalue") != NULL);
+            TESTEX("closures.c set_upvalue uses value_t", strstr(content, "testvm_value_t value") != NULL);
             free(content);
         }
 
@@ -1492,6 +1499,132 @@ void test_actions(void) {
 
         remove("test_output/strings.h");
         remove("test_output/strings.c");
+        vmgen_spec_free(&spec);
+    }
+
+    /* --- closures.h auto-include in generated vm.c --- */
+    MODULE("Closures Include in VM");
+
+    SUITE("vm.c includes closures.h when closures enabled");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.closures = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c includes closures.h",
+                   strstr(content, "#include \"closures.h\"") != NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("vm.c does not include closures.h when closures disabled");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.closures = false;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.c");
+        TESTEX("vm.c created", content != NULL);
+        if (content) {
+            TESTEX("vm.c does not include closures.h",
+                   strstr(content, "#include \"closures.h\"") == NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("vm.h has closure forward declarations when closures enabled");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.closures = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.h");
+        TESTEX("vm.h created", content != NULL);
+        if (content) {
+            TESTEX("vm.h has upvalue forward decl",
+                   strstr(content, "struct testvm_upvalue;") != NULL);
+            TESTEX("vm.h has upvalue_t typedef",
+                   strstr(content, "typedef struct testvm_upvalue testvm_upvalue_t;") != NULL);
+            TESTEX("vm.h has closure forward decl",
+                   strstr(content, "struct testvm_closure;") != NULL);
+            TESTEX("vm.h has closure_t typedef",
+                   strstr(content, "typedef struct testvm_closure testvm_closure_t;") != NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("vm.h has no closure forward declarations when closures disabled");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.closures = false;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *content = read_file("test_output/vm.h");
+        TESTEX("vm.h created", content != NULL);
+        if (content) {
+            TESTEX("vm.h has no upvalue forward decl",
+                   strstr(content, "struct testvm_upvalue;") == NULL);
+            TESTEX("vm.h has no closure forward decl",
+                   strstr(content, "struct testvm_closure;") == NULL);
+            free(content);
+        }
+
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("closures.h has named closure struct tag");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        spec.features.closures = true;
+
+        MKDIR("test_output");
+        int rc = vmgen_gen_closures(&spec, "test_output");
+        TESTEX("gen_closures succeeds", rc == 0);
+
+        char *content = read_file("test_output/closures.h");
+        TESTEX("closures.h created", content != NULL);
+        if (content) {
+            TESTEX("closure struct has tag",
+                   strstr(content, "struct testvm_closure {") != NULL);
+            free(content);
+        }
+
+        remove("test_output/closures.h");
+        remove("test_output/closures.c");
         vmgen_spec_free(&spec);
     }
 
