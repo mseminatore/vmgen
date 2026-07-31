@@ -1,5 +1,7 @@
 # VMGen — VM Generator
 
+[![CI](https://github.com/mseminatore/vmgen/actions/workflows/ci.yml/badge.svg)](https://github.com/mseminatore/vmgen/actions/workflows/ci.yml)
+
 A tool that reads a declarative YAML or TOML specification describing a virtual machine's
 instruction set, value types, and runtime features, then emits a complete,
 standalone C implementation of that VM.
