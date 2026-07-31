@@ -13,7 +13,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            generator: "Visual Studio 17 2022"
+            generator: "Ninja"
             build_type: Debug
           - os: ubuntu-latest
             generator: "Unix Makefiles"
@@ -26,6 +26,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up MSVC dev environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure CMake
         run: cmake -B build -G "${{ matrix.generator }}" -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
@@ -49,14 +53,14 @@ jobs:
       - name: Run vmgen on full.yaml
         if: always() && steps.generate.outcome == 'success'
         id: vmgen_run
-        run: ./build/${{ matrix.build_type == 'Debug' && 'Debug/' || '' }}vmgen${{ runner.os == 'Windows' && '.exe' || '' }} specs/full.yaml -o test_output
+        run: ./build/vmgen${{ runner.os == 'Windows' && '.exe' || '' }} specs/full.yaml -o test_output
         shell: bash
 
       - name: Compile generated code
         if: always() && steps.vmgen_run.outcome == 'success'
         id: compile_gen
         run: |
-          cmake -B test_output/build -S test_output -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          cmake -B test_output/build -S test_output -G "${{ matrix.generator }}" -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           cmake --build test_output/build --config ${{ matrix.build_type }}
         shell: bash
 
