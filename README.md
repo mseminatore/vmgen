@@ -31,7 +31,11 @@ standalone C implementation of that VM.
 
 ## Building
 
+This repo uses a git submodule for the `testy` test framework, so clone with
+`--recurse-submodules` (or run `git submodule update --init --recursive` after a plain clone):
+
 ```bash
+git clone --recurse-submodules https://github.com/mseminatore/vmgen.git
 cmake -B build -S .
 cmake --build build
 ```
@@ -92,7 +96,7 @@ vmgen/
 ├── specs/                  # Example VM specifications (.yaml, .toml)
 ├── examples/               # Sample assembly programs with walkthrough
 ├── tests/                  # Test suite (testy framework + CTest E2E)
-└── third_party/            # Vendored dependencies (testy)
+└── third_party/            # Git submodule dependency (testy)
 ```
 
 ---
