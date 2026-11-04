@@ -519,6 +519,18 @@ static void emit_switch_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
 
 static void emit_threaded_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
                                    const char *upper) {
+    /* Computed goto (&&label, goto *p) is a GNU extension: this code is only
+     * emitted under #if __GNUC__/__clang__, so silence the -Wpedantic
+     * diagnostics for it (and only it) to keep the output warning-free. */
+    vmgen_buf_append(buf,
+        "#if defined(__clang__)\n"
+        "#pragma clang diagnostic push\n"
+        "#pragma clang diagnostic ignored \"-Wgnu-label-as-value\"\n"
+        "#else\n"
+        "#pragma GCC diagnostic push\n"
+        "#pragma GCC diagnostic ignored \"-Wpedantic\"\n"
+        "#endif\n");
+
     /* Label dispatch table */
     vmgen_buf_append(buf,
         "    static void *dispatch_table[] = {\n");
@@ -569,6 +581,12 @@ static void emit_threaded_dispatch(vmgen_buf_t *buf, const vmgen_spec_t *spec,
     }
 
     vmgen_buf_append(buf, "#undef DISPATCH\n");
+    vmgen_buf_append(buf,
+        "#if defined(__clang__)\n"
+        "#pragma clang diagnostic pop\n"
+        "#else\n"
+        "#pragma GCC diagnostic pop\n"
+        "#endif\n");
 
     (void)upper;
 }

@@ -52,7 +52,7 @@ int vmgen_gen_opcodes(const vmgen_spec_t *spec, const char *output_dir) {
     vmgen_buf_appendf(&buf, "} %s_opcode_t;\n\n", spec->name);
 
     /* Opcode name strings */
-    vmgen_buf_appendf(&buf, "static const char *%s_opcode_names[] = {\n",
+    vmgen_buf_appendf(&buf, "static const char *const %s_opcode_names[] = {\n",
                       spec->name);
     for (int i = 0; i < spec->instruction_count; i++) {
         vmgen_buf_appendf(&buf, "    \"%s\",\n", spec->instructions[i].name);

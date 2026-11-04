@@ -80,7 +80,7 @@ cd build && ctest --output-on-failure
 ```
 
 This runs both:
-- **Unit tests** (791 tests) — spec parsing, validation, code generation, action DSL
+- **Unit tests** (795 tests) — spec parsing, validation, code generation, action DSL
 - **E2E integration tests** (4 tests) — generate → compile → run for each spec (minimal, calculator, full YAML, full TOML)
 
 ## Project Structure

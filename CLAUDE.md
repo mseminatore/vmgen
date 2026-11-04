@@ -18,7 +18,7 @@ cmake --build build
 # Run all tests (unit + e2e)
 cd build && ctest --output-on-failure
 
-# Run only unit tests (791 tests via testy framework)
+# Run only unit tests (795 tests via testy framework)
 ./build/vmgen_tests            # Linux/macOS
 .\build\Debug\vmgen_tests.exe  # Windows
 

@@ -165,6 +165,8 @@ void test_codegen(void) {
 
         SUITE("Opcode name table");
         TESTEX("has name table", strstr(content, "testvm_opcode_names") != NULL);
+        TESTEX("name table is a const array (no GCC unused-variable warning)",
+               strstr(content, "static const char *const testvm_opcode_names[]") != NULL);
         TESTEX("has PUSH_CONST name", strstr(content, "\"PUSH_CONST\"") != NULL);
 
         SUITE("Operand count table");
@@ -1778,6 +1780,15 @@ void test_actions(void) {
             TESTEX("has #undef DISPATCH", strstr(content, "#undef DISPATCH") != NULL);
             TESTEX("has #error for non-GCC", strstr(content, "#error") != NULL);
             TESTEX("no fnptr table", strstr(content, "testvm_dispatch_table") == NULL);
+            /* Computed gotos are a GNU extension: -Wpedantic is silenced
+             * around them (and restored afterwards) for warning-free output */
+            const char *push = strstr(content, "#pragma GCC diagnostic push");
+            const char *table = strstr(content, "static void *dispatch_table[]");
+            const char *pop = strstr(content, "#pragma GCC diagnostic pop");
+            TESTEX("pedantic silenced before label table", push && table && push < table);
+            TESTEX("diagnostics restored after labels", pop && table && pop > table);
+            TESTEX("clang label-as-value silenced",
+                   strstr(content, "ignored \"-Wgnu-label-as-value\"") != NULL);
             free(content);
         }
 
