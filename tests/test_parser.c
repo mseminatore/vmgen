@@ -1,8 +1,32 @@
 #include "test.h"
 #include "spec/model.h"
 #include "spec/parser.h"
+#include "spec/parser_toml.h"
 #include "spec/validate.h"
 #include <string.h>
+
+/* Shared checks for specs/custom_types.yaml and .toml (same content) */
+static void check_custom_types_spec(const char *path,
+                                    int (*parse)(const char *, vmgen_spec_t *)) {
+    vmgen_spec_t ct;
+    vmgen_spec_init(&ct);
+    int rc = parse(path, &ct);
+    TESTEX("parse succeeds", rc == 0);
+    TESTEX("built-in types still parsed",
+           (ct.type_flags & (VMGEN_TYPE_INT64 | VMGEN_TYPE_OBJECT)) ==
+           (VMGEN_TYPE_INT64 | VMGEN_TYPE_OBJECT));
+    TESTEX("4 custom types", ct.custom_type_count == 4);
+    TESTEX("cell name", strcmp(ct.custom_types[0].name, "cell") == 0);
+    TESTEX("cell payload pointer", ct.custom_types[0].payload == VMGEN_PAYLOAD_POINTER);
+    TESTEX("cell comment",
+           strcmp(ct.custom_types[0].comment, "boxed variable for by-reference capture") == 0);
+    TESTEX("handle payload int64", ct.custom_types[1].payload == VMGEN_PAYLOAD_INT64);
+    TESTEX("weight payload double", ct.custom_types[2].payload == VMGEN_PAYLOAD_DOUBLE);
+    TESTEX("weight defaults gc off", ct.custom_types[2].gc == 0);
+    TESTEX("gcbox gc on", ct.custom_types[3].gc == 1);
+    TESTEX("custom-type spec validates", vmgen_validate_spec(&ct) == 0);
+    vmgen_spec_free(&ct);
+}
 
 void test_parser(void) {
     MODULE("Spec Model & Validation");
@@ -198,4 +222,76 @@ void test_parser(void) {
     vmgen_spec_init(&bad);
     TESTEX("missing file returns error", vmgen_parse_spec("nonexistent.yaml", &bad) != 0);
     vmgen_spec_free(&bad);
+
+    /* --- User-defined value types --- */
+    MODULE("Custom Types");
+
+    SUITE("Parse custom_types.yaml");
+    check_custom_types_spec("specs/custom_types.yaml", vmgen_parse_spec);
+    SUITE("Parse custom_types.toml");
+    check_custom_types_spec("specs/custom_types.toml", vmgen_parse_spec_toml);
+
+    /* Validation of custom types (built in memory) */
+    #define CT_BASE(s) do { vmgen_spec_init(&(s)); \
+        snprintf((s).name, sizeof((s).name), "t"); \
+        snprintf((s).version, sizeof((s).version), "1.0"); \
+        snprintf((s).instructions[0].name, VMGEN_MAX_NAME, "HALT"); \
+        (s).instruction_count = 1; } while (0)
+
+    SUITE("Custom type validation");
+    vmgen_spec_t cv;
+
+    CT_BASE(cv);
+    snprintf(cv.custom_types[0].name, VMGEN_MAX_NAME, "cell");
+    cv.custom_type_count = 1;
+    TESTEX("valid custom type passes", vmgen_validate_spec(&cv) == 0);
+
+    CT_BASE(cv);
+    snprintf(cv.custom_types[0].name, VMGEN_MAX_NAME, "Cell");
+    cv.custom_type_count = 1;
+    TESTEX("upper-case name rejected", vmgen_validate_spec(&cv) != 0);
+
+    CT_BASE(cv);
+    snprintf(cv.custom_types[0].name, VMGEN_MAX_NAME, "my-type");
+    cv.custom_type_count = 1;
+    TESTEX("non-identifier name rejected", vmgen_validate_spec(&cv) != 0);
+
+    CT_BASE(cv);
+    cv.custom_type_count = 1;  /* empty name */
+    TESTEX("empty name rejected", vmgen_validate_spec(&cv) != 0);
+
+    CT_BASE(cv);
+    snprintf(cv.custom_types[0].name, VMGEN_MAX_NAME, "object");
+    cv.custom_type_count = 1;
+    TESTEX("built-in name rejected", vmgen_validate_spec(&cv) != 0);
+
+    CT_BASE(cv);
+    snprintf(cv.custom_types[0].name, VMGEN_MAX_NAME, "nil_val");
+    cv.custom_type_count = 1;
+    TESTEX("generated-macro name rejected", vmgen_validate_spec(&cv) != 0);
+
+    CT_BASE(cv);
+    snprintf(cv.custom_types[0].name, VMGEN_MAX_NAME, "cell");
+    snprintf(cv.custom_types[1].name, VMGEN_MAX_NAME, "cell");
+    cv.custom_type_count = 2;
+    TESTEX("duplicate name rejected", vmgen_validate_spec(&cv) != 0);
+
+    CT_BASE(cv);
+    snprintf(cv.custom_types[0].name, VMGEN_MAX_NAME, "cell");
+    cv.custom_type_count = 1;
+    cv.stack.value_type = VMGEN_VALUE_INT64;
+    TESTEX("non-tagged-union stack rejected", vmgen_validate_spec(&cv) != 0);
+
+    CT_BASE(cv);
+    snprintf(cv.custom_types[0].name, VMGEN_MAX_NAME, "num");
+    cv.custom_types[0].payload = VMGEN_PAYLOAD_INT64;
+    cv.custom_types[0].gc = 1;
+    cv.custom_type_count = 1;
+    TESTEX("gc on non-pointer payload rejected", vmgen_validate_spec(&cv) != 0);
+
+    CT_BASE(cv);
+    cv.custom_type_overflow = 1;
+    TESTEX("too many custom types rejected", vmgen_validate_spec(&cv) != 0);
+    vmgen_spec_free(&cv);
+    #undef CT_BASE
 }

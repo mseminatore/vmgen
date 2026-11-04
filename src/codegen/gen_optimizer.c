@@ -322,7 +322,14 @@ int vmgen_gen_optimizer(const vmgen_spec_t *spec, const char *output_dir) {
         "                %s_const_pool_t *constants,\n"
         "                %s_opt_stats_t *stats) {\n"
         "    %s_opt_stats_t s;\n"
-        "    memset(&s, 0, sizeof(s));\n\n",
+        "    memset(&s, 0, sizeof(s));\n"
+        "    /* Not every pass is generated for every spec (e.g. no constant\n"
+        "     * folding when arithmetic uses typed_action), so mark the shared\n"
+        "     * helpers and parameters as used to keep the output warning-free. */\n"
+        "    (void)constants;\n"
+        "    (void)read_u16;\n"
+        "    (void)write_u16;\n"
+        "    (void)nop_fill;\n\n",
         spec->name, spec->name, spec->name, spec->name);
 
     if (push_const_idx >= 0 && arith_count > 0) {

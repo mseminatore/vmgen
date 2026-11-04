@@ -101,6 +101,11 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         /* GC implies object type support */
         int has_object = (spec->type_flags & VMGEN_TYPE_OBJECT) != 0 ||
                          spec->features.gc_enabled;
+        /* Custom types with a pointer payload also need the .as.obj field */
+        int needs_obj_field = has_object;
+        for (int i = 0; i < spec->custom_type_count; i++)
+            if (spec->custom_types[i].payload == VMGEN_PAYLOAD_POINTER)
+                needs_obj_field = 1;
 
         /* Enum: always NIL + INT64 + DOUBLE + BOOL, then extras from types list */
         vmgen_buf_appendf(&buf,
@@ -118,6 +123,16 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
             vmgen_buf_appendf(&buf,
                 "    %s_VAL_OBJECT,\n", upper);
         }
+        /* User-defined types follow the built-ins, in spec order */
+        for (int i = 0; i < spec->custom_type_count; i++) {
+            const vmgen_custom_type_t *ct = &spec->custom_types[i];
+            char tu[VMGEN_MAX_NAME];
+            make_upper(tu, ct->name, sizeof(tu));
+            if (ct->comment[0])
+                vmgen_buf_appendf(&buf, "    %s_VAL_%s,  /* %s */\n", upper, tu, ct->comment);
+            else
+                vmgen_buf_appendf(&buf, "    %s_VAL_%s,\n", upper, tu);
+        }
         vmgen_buf_appendf(&buf,
             "} %s_val_type_t;\n\n", spec->name);
 
@@ -130,7 +145,7 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
             "        double  f64;\n"
             "        int     boolean;\n",
             spec->name);
-        if (has_object) {
+        if (needs_obj_field) {
             vmgen_buf_append(&buf, "        void   *obj;\n");
         }
         vmgen_buf_appendf(&buf,
@@ -151,6 +166,18 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
             vmgen_buf_appendf(&buf,
                 "#define %s_OBJ(v)    ((%s_value_t){ .type = %s_VAL_OBJECT, .as.obj = (void*)(v) })\n",
                 upper, spec->name, upper);
+        }
+        for (int i = 0; i < spec->custom_type_count; i++) {
+            const vmgen_custom_type_t *ct = &spec->custom_types[i];
+            char tu[VMGEN_MAX_NAME];
+            make_upper(tu, ct->name, sizeof(tu));
+            const char *field =
+                ct->payload == VMGEN_PAYLOAD_POINTER ? ".as.obj = (void*)(v)" :
+                ct->payload == VMGEN_PAYLOAD_DOUBLE  ? ".as.f64 = (v)" :
+                                                       ".as.i64 = (v)";
+            vmgen_buf_appendf(&buf,
+                "#define %s_%s(v)  ((%s_value_t){ .type = %s_VAL_%s, %s })\n",
+                upper, tu, spec->name, upper, tu, field);
         }
         vmgen_buf_appendc(&buf, '\n');
     } else if (spec->stack.value_type == VMGEN_VALUE_DOUBLE) {
@@ -839,6 +866,28 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
 
     /* GC root scanning function (mark-sweep only) */
     if (spec->features.gc_enabled && spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP) {
+        if (spec->stack.value_type == VMGEN_VALUE_TAGGED_UNION) {
+            /* Which values hold a GC-managed pointer: objects, plus any custom
+             * pointer types declared with `gc: true` */
+            vmgen_buf_appendf(&buf,
+                "static int %s_is_gc_ref(%s_value_t v) {\n"
+                "    switch (v.type) {\n"
+                "    case %s_VAL_OBJECT:\n",
+                spec->name, spec->name, upper);
+            for (int i = 0; i < spec->custom_type_count; i++) {
+                const vmgen_custom_type_t *ct = &spec->custom_types[i];
+                if (!ct->gc || ct->payload != VMGEN_PAYLOAD_POINTER) continue;
+                char tu[VMGEN_MAX_NAME];
+                make_upper(tu, ct->name, sizeof(tu));
+                vmgen_buf_appendf(&buf, "    case %s_VAL_%s:\n", upper, tu);
+            }
+            vmgen_buf_append(&buf,
+                "        return v.as.obj != NULL;\n"
+                "    default:\n"
+                "        return 0;\n"
+                "    }\n"
+                "}\n\n");
+        }
         vmgen_buf_appendf(&buf,
             "static void %s_vm_mark_roots(void *data) {\n"
             "    %s_vm_t *vm = (%s_vm_t *)data;\n",
@@ -848,19 +897,18 @@ static int gen_vm_source(const vmgen_spec_t *spec, const char *output_dir) {
             vmgen_buf_appendf(&buf,
                 "    /* Mark object references on the stack */\n"
                 "    for (int i = 0; i < vm->sp; i++) {\n"
-                "        if (vm->stack[i].type == %s_VAL_OBJECT && vm->stack[i].as.obj) {\n"
+                "        if (%s_is_gc_ref(vm->stack[i])) {\n"
                 "            %s_gc_mark_object(vm->stack[i].as.obj);\n"
                 "        }\n"
                 "    }\n"
                 "    /* Mark object references in the constant pool */\n"
                 "    for (int i = 0; i < vm->constants.count; i++) {\n"
-                "        if (vm->constants.values[i].type == %s_VAL_OBJECT &&\n"
-                "            vm->constants.values[i].as.obj) {\n"
+                "        if (%s_is_gc_ref(vm->constants.values[i])) {\n"
                 "            %s_gc_mark_object(vm->constants.values[i].as.obj);\n"
                 "        }\n"
                 "    }\n",
-                upper, spec->name,
-                upper, spec->name);
+                spec->name, spec->name,
+                spec->name, spec->name);
         } else {
             vmgen_buf_append(&buf,
                 "    /* Non-tagged-union value type: no embedded object references */\n"

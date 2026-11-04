@@ -180,3 +180,21 @@ add_test(NAME e2e_full_toml
         -P ${E2E_SCRIPT}
 )
 set_tests_properties(e2e_full_toml PROPERTIES TIMEOUT 120 DEPENDS vmgen)
+
+add_test(NAME e2e_custom_types
+    COMMAND ${CMAKE_COMMAND}
+        -DVMGEN=$<TARGET_FILE:vmgen>
+        -DSPEC=${CMAKE_CURRENT_SOURCE_DIR}/specs/custom_types.yaml
+        -DWORKDIR=${E2E_WORKDIR}/custom_types
+        -P ${E2E_SCRIPT}
+)
+set_tests_properties(e2e_custom_types PROPERTIES TIMEOUT 120 DEPENDS vmgen)
+
+add_test(NAME e2e_custom_types_toml
+    COMMAND ${CMAKE_COMMAND}
+        -DVMGEN=$<TARGET_FILE:vmgen>
+        -DSPEC=${CMAKE_CURRENT_SOURCE_DIR}/specs/custom_types.toml
+        -DWORKDIR=${E2E_WORKDIR}/custom_types_toml
+        -P ${E2E_SCRIPT}
+)
+set_tests_properties(e2e_custom_types_toml PROPERTIES TIMEOUT 120 DEPENDS vmgen)

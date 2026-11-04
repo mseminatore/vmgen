@@ -2,6 +2,76 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Lower-case C identifier: [a-z_][a-z0-9_]* */
+static int is_lower_ident(const char *s) {
+    if (!s || !*s) return 0;
+    if (!((*s >= 'a' && *s <= 'z') || *s == '_')) return 0;
+    for (const char *c = s + 1; *c; c++) {
+        if (!((*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') || *c == '_'))
+            return 0;
+    }
+    return 1;
+}
+
+/* Names that would collide with built-in value types or generated macros
+ * (<NAME>_VAL_<TYPE>, <NAME>_<TYPE>(v), <NAME>_NIL_VAL, <NAME>_OBJ(v), ...) */
+static int is_reserved_type_name(const char *s) {
+    static const char *const reserved[] = {
+        "nil", "int64", "double", "bool", "string", "object", "obj",
+        "nil_val", "true_val", "false_val", NULL
+    };
+    for (int i = 0; reserved[i]; i++)
+        if (strcmp(s, reserved[i]) == 0) return 1;
+    return 0;
+}
+
+static int validate_custom_types(const vmgen_spec_t *spec) {
+    int errors = 0;
+    if (spec->custom_type_overflow) {
+        fprintf(stderr, "vmgen: spec error: too many custom types (max %d)\n",
+                VMGEN_MAX_CUSTOM_TYPES);
+        errors++;
+    }
+    if (spec->custom_type_count > 0 &&
+        spec->stack.value_type != VMGEN_VALUE_TAGGED_UNION) {
+        fprintf(stderr, "vmgen: spec error: custom types require value_type "
+                "'tagged_union'\n");
+        errors++;
+    }
+    for (int i = 0; i < spec->custom_type_count; i++) {
+        const vmgen_custom_type_t *ct = &spec->custom_types[i];
+        if (!is_lower_ident(ct->name)) {
+            fprintf(stderr, "vmgen: spec error: custom type name '%s' must be a "
+                    "lower-case C identifier ([a-z_][a-z0-9_]*)\n", ct->name);
+            errors++;
+            continue;
+        }
+        if (is_reserved_type_name(ct->name)) {
+            fprintf(stderr, "vmgen: spec error: custom type name '%s' is reserved\n",
+                    ct->name);
+            errors++;
+        }
+        for (int j = i + 1; j < spec->custom_type_count; j++) {
+            if (strcmp(ct->name, spec->custom_types[j].name) == 0) {
+                fprintf(stderr, "vmgen: spec error: duplicate custom type '%s'\n",
+                        ct->name);
+                errors++;
+            }
+        }
+        if (ct->gc && ct->payload != VMGEN_PAYLOAD_POINTER) {
+            fprintf(stderr, "vmgen: spec error: custom type '%s' sets gc but its "
+                    "payload is not 'pointer'\n", ct->name);
+            errors++;
+        }
+        if (ct->gc && !(spec->features.gc_enabled &&
+                        spec->features.gc_strategy == VMGEN_GC_MARK_SWEEP)) {
+            fprintf(stderr, "vmgen: spec warning: custom type '%s' sets gc but "
+                    "mark-sweep GC is not enabled; ignoring\n", ct->name);
+        }
+    }
+    return errors;
+}
+
 static int has_instruction(const vmgen_spec_t *spec, const char *name) {
     for (int i = 0; i < spec->instruction_count; i++) {
         if (strcmp(spec->instructions[i].name, name) == 0)
@@ -141,6 +211,9 @@ int vmgen_validate_spec(const vmgen_spec_t *spec) {
                 "value_type 'tagged_union'\n");
         warnings++;
     }
+
+    /* User-defined value types */
+    errors += validate_custom_types(spec);
 
     (void)warnings;
     return errors > 0 ? -1 : 0;

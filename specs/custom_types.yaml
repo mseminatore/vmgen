@@ -1,0 +1,80 @@
+# custom_types.yaml — user-defined value types
+#
+# Besides the built-in types, a `types` entry can be a mapping that declares a
+# user-defined value type. Each one adds CTVM_VAL_<NAME> to the value-type enum
+# and a CTVM_<NAME>(v) constructor macro storing v in the chosen union field:
+#
+#   payload: pointer  → .as.obj  (default)
+#   payload: int64    → .as.i64
+#   payload: double   → .as.f64
+#
+# `gc: true` (pointer payload, mark-sweep GC) makes values of the type GC roots.
+vm:
+  name: "ctvm"
+  version: "1.0"
+
+  stack:
+    type: "fixed"
+    max_depth: 256
+    value_type: "tagged_union"
+
+  types:
+    - int64
+    - double
+    - bool
+    - object
+    - { name: cell, payload: pointer, comment: "boxed variable for by-reference capture" }
+    - { name: handle, payload: int64, comment: "opaque host resource id" }
+    - { name: weight, payload: double }
+    - { name: gcbox, payload: pointer, gc: true }
+
+  features:
+    garbage_collection:
+      enabled: true
+      strategy: "mark_sweep"
+    debug_tracing: false
+
+  dispatch: "switch"
+
+  instructions:
+    - name: PUSH_CONST
+      operands: [{ name: index, type: uint16 }]
+      description: "Push constant at index onto stack"
+      action: "push constants[$index]"
+
+    - name: POP
+      operands: []
+      description: "Pop top of stack"
+      action: "pop _"
+      stack_effect: -1
+
+    - name: ADD
+      operands: []
+      description: "Pop two values, push their sum"
+      typed_action:
+        int64: "pop b; pop a; push a + b"
+        double: "pop b; pop a; push a + b"
+      stack_effect: -1
+
+    - name: MAKE_HANDLE
+      operands: [{ name: id, type: uint16 }]
+      description: "Push a handle value (exercises the generated custom-type macros)"
+      action_c: |
+        ctvm_value_t _h = CTVM_HANDLE((int64_t)id);
+        ctvm_value_t _c = CTVM_CELL(NULL);
+        ctvm_value_t _w = CTVM_WEIGHT(0.5);
+        if (_h.type != CTVM_VAL_HANDLE || _c.type != CTVM_VAL_CELL ||
+            _w.type != CTVM_VAL_WEIGHT || _h.as.i64 != (int64_t)id) {
+            return -1;
+        }
+        ctvm_vm_push(vm, _h);
+      stack_effect: 1
+
+    - name: HALT
+      operands: []
+      description: "Stop execution"
+      action: "halt"
+
+  constants:
+    - int64
+    - double

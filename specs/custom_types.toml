@@ -1,0 +1,72 @@
+# custom_types.toml — user-defined value types (TOML form of custom_types.yaml)
+#
+# A `types` entry may be an inline table declaring a user-defined value type:
+#   { name = "cell", payload = "pointer" }   →  CTVM_VAL_CELL, CTVM_CELL(v)
+# payload: "pointer" (.as.obj, default) | "int64" (.as.i64) | "double" (.as.f64)
+# gc = true (pointer payload + mark-sweep GC) makes values of the type GC roots.
+[vm]
+name = "ctvm"
+version = "1.0"
+dispatch = "switch"
+types = [
+    "int64", "double", "bool", "object",
+    { name = "cell", payload = "pointer", comment = "boxed variable for by-reference capture" },
+    { name = "handle", payload = "int64", comment = "opaque host resource id" },
+    { name = "weight", payload = "double" },
+    { name = "gcbox", payload = "pointer", gc = true },
+]
+constants = ["int64", "double"]
+
+[vm.stack]
+type = "fixed"
+max_depth = 256
+value_type = "tagged_union"
+
+[vm.features]
+debug_tracing = false
+
+[vm.features.garbage_collection]
+enabled = true
+strategy = "mark_sweep"
+
+[[vm.instructions]]
+name = "PUSH_CONST"
+description = "Push constant at index onto stack"
+action = "push constants[$index]"
+operands = [{name = "index", type = "uint16"}]
+
+[[vm.instructions]]
+name = "POP"
+description = "Pop top of stack"
+action = "pop _"
+operands = []
+stack_effect = -1
+
+[[vm.instructions]]
+name = "ADD"
+description = "Pop two values, push their sum"
+operands = []
+stack_effect = -1
+typed_action = { int64 = "pop b; pop a; push a + b", double = "pop b; pop a; push a + b" }
+
+[[vm.instructions]]
+name = "MAKE_HANDLE"
+description = "Push a handle value (exercises the generated custom-type macros)"
+operands = [{name = "id", type = "uint16"}]
+stack_effect = 1
+action_c = """
+ctvm_value_t _h = CTVM_HANDLE((int64_t)id);
+ctvm_value_t _c = CTVM_CELL(NULL);
+ctvm_value_t _w = CTVM_WEIGHT(0.5);
+if (_h.type != CTVM_VAL_HANDLE || _c.type != CTVM_VAL_CELL ||
+    _w.type != CTVM_VAL_WEIGHT || _h.as.i64 != (int64_t)id) {
+    return -1;
+}
+ctvm_vm_push(vm, _h);
+"""
+
+[[vm.instructions]]
+name = "HALT"
+description = "Stop execution"
+action = "halt"
+operands = []

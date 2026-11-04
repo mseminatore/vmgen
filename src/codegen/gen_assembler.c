@@ -31,6 +31,15 @@ static const char *scanf_fmt_for(vmgen_operand_type_t type) {
     return "%u";
 }
 
+/* C type matching scanf_fmt_for() — %u needs unsigned int*, %d needs int* */
+static const char *scanf_type_for(vmgen_operand_type_t type) {
+    switch (type) {
+    case VMGEN_OPERAND_INT8:   case VMGEN_OPERAND_INT16:
+    case VMGEN_OPERAND_INT32:  return "int";
+    default:                   return "unsigned int";
+    }
+}
+
 int vmgen_gen_assembler(const vmgen_spec_t *spec, const char *output_dir) {
     char upper[VMGEN_MAX_NAME];
     make_upper(upper, spec->name, sizeof(upper));
@@ -164,7 +173,8 @@ int vmgen_gen_assembler(const vmgen_spec_t *spec, const char *output_dir) {
         for (int j = 0; j < instr->operand_count; j++) {
             int sz = operand_size(instr->operands[j].type);
             vmgen_buf_appendf(&buf,
-                "        { int val = 0; sscanf(line, \" %s\", &val); ",
+                "        { %s val = 0; sscanf(line, \" %s\", &val); ",
+                scanf_type_for(instr->operands[j].type),
                 scanf_fmt_for(instr->operands[j].type));
 
             /* Advance line past this operand */

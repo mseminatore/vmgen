@@ -80,7 +80,7 @@ cd build && ctest --output-on-failure
 ```
 
 This runs both:
-- **Unit tests** (533 tests) — spec parsing, validation, code generation, action DSL
+- **Unit tests** (791 tests) — spec parsing, validation, code generation, action DSL
 - **E2E integration tests** (4 tests) — generate → compile → run for each spec (minimal, calculator, full YAML, full TOML)
 
 ## Project Structure
@@ -224,6 +224,44 @@ action = "halt"
 | `tagged_union` | Tagged union with int64/double/bool/string/object variants |
 | `double` | All values are doubles |
 | `int64` | All values are 64-bit integers |
+
+#### User-defined types
+
+With a `tagged_union` stack, a `types` entry can also be a mapping that declares
+your own value type — for host values the built-ins don't model, such as boxed
+variables, resource handles or foreign pointers:
+
+```yaml
+types:
+  - int64
+  - object
+  - { name: cell, payload: pointer, comment: "boxed captured variable" }
+  - { name: handle, payload: int64 }
+  - { name: gcbox, payload: pointer, gc: true }
+```
+
+```toml
+types = ["int64", "object", { name = "cell", payload = "pointer" }]
+```
+
+Each type adds a value-type enum entry and a constructor macro (here for
+`name: "myvm"`):
+
+```c
+MYVM_VAL_CELL                                   /* in myvm_val_type_t */
+#define MYVM_CELL(v) ((myvm_value_t){ .type = MYVM_VAL_CELL, .as.obj = (void*)(v) })
+```
+
+| Key | Values | Meaning |
+|-----|--------|---------|
+| `name` | lower-case C identifier | required; must not be a built-in type name (`int64`, `object`, …) or clash with generated macros (`obj`, `nil_val`, …) |
+| `payload` | `pointer` (default), `int64`, `double` | union field holding the value: `.as.obj`, `.as.i64` or `.as.f64` |
+| `gc` | `true` / `false` (default) | pointer payload only: values are GC roots for mark-and-sweep GC |
+| `comment` | string | emitted next to the enum entry |
+
+Custom types are opaque to the VM: typed actions, the disassembler and the
+built-in instructions treat them like any other value, and `*_bc_save` refuses
+to serialize constants of a custom type. See `specs/custom_types.yaml`.
 
 ### Feature Toggles
 

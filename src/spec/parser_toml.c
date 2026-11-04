@@ -54,9 +54,53 @@ static void parse_stack(toml_table_t *stack, vmgen_spec_t *spec) {
     }
 }
 
-static void parse_types(toml_array_t *arr, vmgen_spec_t *spec) {
+/* Parse a user-defined type table: { name = "cell", payload = "pointer",
+ * gc = false, comment = "..." }. Returns 0 on success, -1 on error. */
+static int parse_custom_type(toml_table_t *t, vmgen_spec_t *spec) {
+    vmgen_custom_type_t ct;
+    memset(&ct, 0, sizeof(ct));
+    ct.payload = VMGEN_PAYLOAD_POINTER;
+
+    toml_datum_t d = toml_string_in(t, "name");
+    if (d.ok) { safe_copy(ct.name, d.u.s, VMGEN_MAX_NAME); free(d.u.s); }
+
+    d = toml_string_in(t, "payload");
+    if (d.ok) {
+        int bad = 0;
+        if (str_eq(d.u.s, "pointer"))     ct.payload = VMGEN_PAYLOAD_POINTER;
+        else if (str_eq(d.u.s, "int64"))  ct.payload = VMGEN_PAYLOAD_INT64;
+        else if (str_eq(d.u.s, "double")) ct.payload = VMGEN_PAYLOAD_DOUBLE;
+        else {
+            fprintf(stderr, "vmgen: unknown payload '%s' for custom type "
+                    "(expected pointer, int64 or double)\n", d.u.s);
+            bad = 1;
+        }
+        free(d.u.s);
+        if (bad) return -1;
+    }
+
+    d = toml_bool_in(t, "gc");
+    if (d.ok) ct.gc = d.u.b;
+
+    d = toml_string_in(t, "comment");
+    if (!d.ok) d = toml_string_in(t, "description");
+    if (d.ok) { safe_copy(ct.comment, d.u.s, VMGEN_MAX_DESC); free(d.u.s); }
+
+    if (spec->custom_type_count < VMGEN_MAX_CUSTOM_TYPES)
+        spec->custom_types[spec->custom_type_count++] = ct;
+    else
+        spec->custom_type_overflow = 1;
+    return 0;
+}
+
+static int parse_types(toml_array_t *arr, vmgen_spec_t *spec) {
     int n = toml_array_nelem(arr);
     for (int i = 0; i < n; i++) {
+        toml_table_t *t = toml_table_at(arr, i);
+        if (t) {
+            if (parse_custom_type(t, spec) != 0) return -1;
+            continue;
+        }
         toml_datum_t d = toml_string_at(arr, i);
         if (!d.ok) continue;
         if (str_eq(d.u.s, "int64"))  spec->type_flags |= VMGEN_TYPE_INT64;
@@ -64,8 +108,10 @@ static void parse_types(toml_array_t *arr, vmgen_spec_t *spec) {
         else if (str_eq(d.u.s, "bool"))   spec->type_flags |= VMGEN_TYPE_BOOL;
         else if (str_eq(d.u.s, "string")) spec->type_flags |= VMGEN_TYPE_STRING;
         else if (str_eq(d.u.s, "object")) spec->type_flags |= VMGEN_TYPE_OBJECT;
+        else fprintf(stderr, "vmgen: unknown type '%s'\n", d.u.s);
         free(d.u.s);
     }
+    return 0;
 }
 
 static void parse_features(toml_table_t *feat, vmgen_spec_t *spec) {
@@ -290,7 +336,10 @@ int vmgen_parse_spec_toml(const char *path, vmgen_spec_t *spec) {
 
     /* Types */
     toml_array_t *types = toml_array_in(vm, "types");
-    if (types) parse_types(types, spec);
+    if (types && parse_types(types, spec) != 0) {
+        toml_free(root);
+        return -1;
+    }
 
     /* Features */
     toml_table_t *feat = toml_table_in(vm, "features");

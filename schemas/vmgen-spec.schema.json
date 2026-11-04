@@ -31,12 +31,46 @@
           "type": "array",
           "description": "Value types the VM understands. Determines tagged union variants.",
           "items": {
-            "type": "string",
-            "enum": ["int64", "double", "bool", "string", "object"]
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": ["int64", "double", "bool", "string", "object"]
+              },
+              {
+                "type": "object",
+                "description": "User-defined value type (tagged_union only). Adds <NAME>_VAL_<TYPE> to the value-type enum and a <NAME>_<TYPE>(v) constructor macro.",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z_][a-z0-9_]*$",
+                    "not": { "enum": ["nil", "int64", "double", "bool", "string", "object", "obj", "nil_val", "true_val", "false_val"] },
+                    "description": "Lower-case C identifier, e.g. \"cell\" → CLAYVM_VAL_CELL / CLAYVM_CELL(v)"
+                  },
+                  "payload": {
+                    "type": "string",
+                    "enum": ["pointer", "int64", "double"],
+                    "default": "pointer",
+                    "description": "Union field holding the value: pointer → .as.obj, int64 → .as.i64, double → .as.f64"
+                  },
+                  "gc": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Pointer payload only: treat values of this type as GC roots (mark-sweep GC)"
+                  },
+                  "comment": {
+                    "type": "string",
+                    "description": "Emitted as a comment next to the enum value"
+                  }
+                },
+                "required": ["name"],
+                "additionalProperties": false
+              }
+            ]
           },
           "minItems": 1,
           "uniqueItems": true,
-          "examples": [["int64"], ["int64", "double", "bool", "string", "object"]]
+          "examples": [["int64"], ["int64", "double", "bool", "string", "object"],
+                       ["int64", "object", { "name": "cell", "payload": "pointer" }]]
         },
         "features": {
           "$ref": "#/$defs/features"

@@ -18,7 +18,7 @@ cmake --build build
 # Run all tests (unit + e2e)
 cd build && ctest --output-on-failure
 
-# Run only unit tests (533 tests via testy framework)
+# Run only unit tests (791 tests via testy framework)
 ./build/vmgen_tests            # Linux/macOS
 .\build\Debug\vmgen_tests.exe  # Windows
 
@@ -32,7 +32,8 @@ ctest --test-dir build -R e2e_minimal --output-on-failure
 The testy framework does not support filtering individual unit tests by name — the full suite
 always runs.
 
-E2E tests (`e2e_minimal`, `e2e_calculator`, `e2e_full`, `e2e_full_toml`) each generate a VM from a
+E2E tests (`e2e_minimal`, `e2e_calculator`, `e2e_full`, `e2e_full_toml`, `e2e_custom_types`,
+`e2e_custom_types_toml`) each generate a VM from a
 spec, compile the output, and run the generated smoke tests.
 
 Dependencies (`libyaml`, `tomlc99`) are fetched automatically via CMake `FetchContent` — no manual
@@ -120,7 +121,9 @@ handle this themselves.
 Specs can be YAML or TOML (auto-detected by file extension). Required fields: `vm.name`,
 `vm.version`, `vm.stack`, `vm.instructions`. Features (interned strings, GC, closures, modules,
 coroutines, debug tracing) are all optional with sensible defaults. `vm.stack.value_type` is one
-of `int64`, `double`, or `tagged_union`. `vm.dispatch` is one of `switch`, `fnptr`, `threaded`
+of `int64`, `double`, or `tagged_union`. With `tagged_union`, `vm.types` entries may also be mappings
+(`{ name: cell, payload: pointer|int64|double, gc: bool }`) declaring user-defined value types
+(`vmgen_custom_type_t` in `model.h`; see `specs/custom_types.yaml`). `vm.dispatch` is one of `switch`, `fnptr`, `threaded`
 (computed gotos, GCC/Clang only), or `auto`. See `schemas/vmgen-spec.schema.json` for the full
 schema and `specs/` for worked examples (`minimal.yaml`, `calculator.yaml`, `full.yaml`/`.toml`).
 

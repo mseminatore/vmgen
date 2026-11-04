@@ -2690,4 +2690,108 @@ void test_optimizer(void) {
         remove("test_output/vm.c");
         vmgen_spec_free(&spec);
     }
+
+    /* --- User-defined value types --- */
+    SUITE("Custom types: vm.h enum, union and constructors");
+    {
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        int rc = vmgen_parse_spec("specs/custom_types.yaml", &spec);
+        TESTEX("parse custom_types.yaml", rc == 0);
+        MKDIR("test_output");
+        rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+
+        char *hdr = read_file("test_output/vm.h");
+        TESTEX("vm.h created", hdr != NULL);
+        if (hdr) {
+            TESTEX("enum has CELL", strstr(hdr, "CTVM_VAL_CELL,") != NULL);
+            TESTEX("enum has HANDLE", strstr(hdr, "CTVM_VAL_HANDLE,") != NULL);
+            TESTEX("enum comment emitted",
+                   strstr(hdr, "/* boxed variable for by-reference capture */") != NULL);
+            TESTEX("custom types follow OBJECT",
+                   strstr(hdr, "CTVM_VAL_OBJECT,") < strstr(hdr, "CTVM_VAL_CELL,"));
+            TESTEX("pointer constructor uses .as.obj",
+                   strstr(hdr, "#define CTVM_CELL(v)  ((ctvm_value_t){ .type = CTVM_VAL_CELL, "
+                               ".as.obj = (void*)(v) })") != NULL);
+            TESTEX("int64 constructor uses .as.i64",
+                   strstr(hdr, "#define CTVM_HANDLE(v)  ((ctvm_value_t){ .type = CTVM_VAL_HANDLE, "
+                               ".as.i64 = (v) })") != NULL);
+            TESTEX("double constructor uses .as.f64",
+                   strstr(hdr, "#define CTVM_WEIGHT(v)  ((ctvm_value_t){ .type = CTVM_VAL_WEIGHT, "
+                               ".as.f64 = (v) })") != NULL);
+            free(hdr);
+        }
+
+        char *src = read_file("test_output/vm.c");
+        TESTEX("vm.c created", src != NULL);
+        if (src) {
+            const char *ref = strstr(src, "static int ctvm_is_gc_ref(ctvm_value_t v)");
+            TESTEX("gc ref helper emitted", ref != NULL);
+            if (ref) {
+                const char *end = strstr(ref, "\n}\n");
+                const char *gcbox = strstr(ref, "case CTVM_VAL_GCBOX:");
+                const char *cell = strstr(ref, "case CTVM_VAL_CELL:");
+                TESTEX("gc:true type is a GC root", gcbox && end && gcbox < end);
+                TESTEX("gc:false type is not a GC root", !cell || (end && cell > end));
+            }
+            TESTEX("mark_roots uses helper", strstr(src, "if (ctvm_is_gc_ref(vm->stack[i]))") != NULL);
+            free(src);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+
+        rc = vmgen_gen_bytecode(&spec, "test_output");
+        TESTEX("gen_bytecode succeeds", rc == 0);
+        char *bc = read_file("test_output/bytecode.c");
+        if (bc) {
+            TESTEX("bytecode save rejects custom types",
+                   strstr(bc, "case CTVM_VAL_CELL:") != NULL &&
+                   strstr(bc, "cannot be serialized") != NULL);
+            free(bc);
+        }
+        remove("test_output/bytecode.h");
+        remove("test_output/bytecode.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Custom pointer type without 'object' still gets .as.obj");
+    {
+        vmgen_spec_t spec;
+        make_test_spec(&spec);
+        snprintf(spec.custom_types[0].name, VMGEN_MAX_NAME, "cell");
+        spec.custom_types[0].payload = VMGEN_PAYLOAD_POINTER;
+        spec.custom_type_count = 1;
+        MKDIR("test_output");
+        int rc = vmgen_gen_vm(&spec, "test_output");
+        TESTEX("gen_vm succeeds", rc == 0);
+        char *hdr = read_file("test_output/vm.h");
+        if (hdr) {
+            TESTEX("no OBJECT enum", strstr(hdr, "TESTVM_VAL_OBJECT") == NULL);
+            TESTEX("union has obj field", strstr(hdr, "void   *obj;") != NULL);
+            TESTEX("CELL constructor", strstr(hdr, "#define TESTVM_CELL(v)") != NULL);
+            free(hdr);
+        }
+        remove("test_output/vm.h");
+        remove("test_output/vm.c");
+        vmgen_spec_free(&spec);
+    }
+
+    SUITE("Bad custom type payload is a parse error");
+    {
+        FILE *f = fopen("test_output/bad_payload.yaml", "w");
+        if (f) {
+            fputs("vm:\n  name: \"bad\"\n  version: \"1.0\"\n"
+                  "  stack: { type: fixed, max_depth: 16, value_type: tagged_union }\n"
+                  "  types: [int64, { name: cell, payload: float }]\n"
+                  "  instructions:\n    - { name: HALT, operands: [], action: \"halt\" }\n", f);
+            fclose(f);
+        }
+        vmgen_spec_t spec;
+        vmgen_spec_init(&spec);
+        TESTEX("unknown payload rejected",
+               vmgen_parse_spec("test_output/bad_payload.yaml", &spec) != 0);
+        vmgen_spec_free(&spec);
+        remove("test_output/bad_payload.yaml");
+    }
 }

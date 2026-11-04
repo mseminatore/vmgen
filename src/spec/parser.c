@@ -156,6 +156,55 @@ static void parse_stack(parse_ctx_t *ctx) {
     }
 }
 
+/* Parse a user-defined type mapping: { name: cell, payload: pointer, gc: false,
+ * comment: "..." }. MAPPING_START has already been consumed. */
+static void parse_custom_type(parse_ctx_t *ctx) {
+    vmgen_custom_type_t ct;
+    memset(&ct, 0, sizeof(ct));
+    ct.payload = VMGEN_PAYLOAD_POINTER;
+    int bad_payload = 0;
+
+    yaml_event_t e;
+    while (!ctx->error) {
+        if (!next_event(ctx, &e)) return;
+        if (e.type == YAML_MAPPING_END_EVENT) { yaml_event_delete(&e); break; }
+        if (e.type != YAML_SCALAR_EVENT) { yaml_event_delete(&e); continue; }
+
+        char key[VMGEN_MAX_NAME];
+        safe_copy(key, event_scalar(&e), sizeof(key));
+        yaml_event_delete(&e);
+        yaml_event_t v;
+        if (!expect_scalar(ctx, &v)) return;
+        const char *val = event_scalar(&v);
+
+        if (str_eq(key, "name")) {
+            safe_copy(ct.name, val, VMGEN_MAX_NAME);
+        } else if (str_eq(key, "payload")) {
+            if (str_eq(val, "pointer"))     ct.payload = VMGEN_PAYLOAD_POINTER;
+            else if (str_eq(val, "int64"))  ct.payload = VMGEN_PAYLOAD_INT64;
+            else if (str_eq(val, "double")) ct.payload = VMGEN_PAYLOAD_DOUBLE;
+            else {
+                fprintf(stderr, "vmgen: unknown payload '%s' for custom type "
+                        "(expected pointer, int64 or double)\n", val);
+                bad_payload = 1;
+            }
+        } else if (str_eq(key, "gc")) {
+            ct.gc = parse_bool(val);
+        } else if (str_eq(key, "comment") || str_eq(key, "description")) {
+            safe_copy(ct.comment, val, VMGEN_MAX_DESC);
+        } else {
+            fprintf(stderr, "vmgen: unknown key '%s' in custom type\n", key);
+        }
+        yaml_event_delete(&v);
+    }
+
+    if (bad_payload) { ctx->error = 1; return; }
+    if (ctx->spec->custom_type_count < VMGEN_MAX_CUSTOM_TYPES)
+        ctx->spec->custom_types[ctx->spec->custom_type_count++] = ct;
+    else
+        ctx->spec->custom_type_overflow = 1;
+}
+
 static void parse_types(parse_ctx_t *ctx) {
     yaml_event_t e;
     /* already consumed SEQUENCE_START */
@@ -163,6 +212,11 @@ static void parse_types(parse_ctx_t *ctx) {
     while (!ctx->error) {
         if (!next_event(ctx, &e)) return;
         if (e.type == YAML_SEQUENCE_END_EVENT) { yaml_event_delete(&e); return; }
+        if (e.type == YAML_MAPPING_START_EVENT) {
+            yaml_event_delete(&e);
+            parse_custom_type(ctx);
+            continue;
+        }
         if (e.type != YAML_SCALAR_EVENT) { yaml_event_delete(&e); continue; }
 
         const char *t = event_scalar(&e);

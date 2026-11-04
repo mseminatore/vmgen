@@ -138,7 +138,23 @@ int vmgen_gen_bytecode(const vmgen_spec_t *spec, const char *output_dir) {
             "            double v = vm->constants.values[i].as.f64;\n"
             "            fwrite(&v, sizeof(v), 1, f);\n"
             "            break;\n"
-            "        }\n"
+            "        }\n",
+            upper, upper,
+            upper, upper);
+        /* User-defined types carry embedder-specific meaning (often a
+         * pointer) and cannot be serialized */
+        for (int ci = 0; ci < spec->custom_type_count; ci++) {
+            char tu[VMGEN_MAX_NAME];
+            make_upper(tu, spec->custom_types[ci].name, sizeof(tu));
+            vmgen_buf_appendf(&buf, "        case %s_VAL_%s:\n", upper, tu);
+        }
+        if (spec->custom_type_count > 0) {
+            vmgen_buf_append(&buf,
+                "            fprintf(stderr, \"bytecode save: constant %d has a custom "
+                "type that cannot be serialized\\n\", i);\n"
+                "            goto fail;\n");
+        }
+        vmgen_buf_appendf(&buf,
             "        default: {\n"
             "            uint8_t tag = %s_BC_CONST_INT64;\n"
             "            fwrite(&tag, 1, 1, f);\n"
@@ -147,8 +163,6 @@ int vmgen_gen_bytecode(const vmgen_spec_t *spec, const char *output_dir) {
             "            break;\n"
             "        }\n"
             "        }\n",
-            upper, upper,
-            upper, upper,
             upper);
     } else if (spec->stack.value_type == VMGEN_VALUE_DOUBLE) {
         vmgen_buf_appendf(&buf,
