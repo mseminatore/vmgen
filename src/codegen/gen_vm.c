@@ -251,12 +251,18 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
             upper, spec->name);
     }
 
+    /* The VM type, declared once (native.h may have declared it already —
+     * a repeated typedef is C11), then defined */
     vmgen_buf_appendf(&buf,
-        "typedef struct %s_vm {\n"
+        "#ifndef %s_VM_T_DECLARED\n"
+        "#define %s_VM_T_DECLARED\n"
+        "typedef struct %s_vm %s_vm_t;\n"
+        "#endif\n\n"
+        "struct %s_vm {\n"
         "    const uint8_t *code;\n"
         "    size_t code_len;\n"
         "    size_t ip;\n",
-        spec->name);
+        upper, upper, spec->name, spec->name, spec->name);
 
     /* Stack — dynamic or fixed */
     if (spec->stack.type == VMGEN_STACK_DYNAMIC) {
@@ -348,7 +354,7 @@ static int gen_vm_header(const vmgen_spec_t *spec, const char *output_dir) {
         "    void (*cleanup)(struct %s_vm *vm);\n",
         spec->name);
 
-    vmgen_buf_appendf(&buf, "} %s_vm_t;\n\n", spec->name);
+    vmgen_buf_append(&buf, "};\n\n");
 
     /* API prototypes */
     vmgen_buf_appendf(&buf,

@@ -32,10 +32,15 @@ int vmgen_gen_native(const vmgen_spec_t *spec, const char *output_dir) {
     vmgen_buf_append(&buf,
         "#include <stddef.h>\n\n");
 
-    /* Forward-declare the VM type so native.h is self-contained */
+    /* Forward-declare the VM type so native.h is self-contained. vm.h
+     * declares it the same way: guarded, because repeating a typedef is C11
+     * (C99 compilers warn). */
     vmgen_buf_appendf(&buf,
-        "typedef struct %s_vm %s_vm_t;\n\n",
-        spec->name, spec->name);
+        "#ifndef %s_VM_T_DECLARED\n"
+        "#define %s_VM_T_DECLARED\n"
+        "typedef struct %s_vm %s_vm_t;\n"
+        "#endif\n\n",
+        upper, upper, spec->name, spec->name);
 
     /* Native function typedef */
     vmgen_buf_appendf(&buf,
