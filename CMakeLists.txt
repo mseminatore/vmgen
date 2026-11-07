@@ -22,7 +22,7 @@ FetchContent_MakeAvailable(libyaml)
 FetchContent_Declare(
     tomlc99
     GIT_REPOSITORY https://github.com/cktan/tomlc99.git
-    GIT_TAG        master
+    GIT_TAG        62ce93ceb713dc49909d0fef1411f9d37bef83f2  # pinned; upstream now points to tomlc17
 )
 FetchContent_MakeAvailable(tomlc99)
 
